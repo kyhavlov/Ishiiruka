@@ -11,6 +11,7 @@
 #include "VideoBackends/DX9/VideoBackend.h"
 
 #endif
+#include "VideoBackends/Null/VideoBackend.h"
 #include "VideoBackends/OGL/VideoBackend.h"
 #include "VideoBackends/Software/VideoBackend.h"
 #include "VideoBackends/Vulkan/VideoBackend.h"
@@ -69,7 +70,7 @@ static bool PlatformSupportsVulkan()
 
 void VideoBackendBase::PopulateList()
 {
-	// D3D11 > D3D12 > D3D9 > OGL > VULKAN > SW
+	// D3D11 > D3D12 > D3D9 > OGL > VULKAN > SW > Null
 #ifdef _WIN32
 	if (IsWindowsVistaOrGreater())
 	{
@@ -87,7 +88,7 @@ void VideoBackendBase::PopulateList()
 	// disable OGL video Backend while is merged from master
 	g_available_video_backends.push_back(std::make_unique<OGL::VideoBackend>());
 
-	// we want to push macOS users to Vulkan since OpenGL has been long deprecated 
+	// we want to push macOS users to Vulkan since OpenGL has been long deprecated
 	// by Apple and is a known stumbling block for performance for new players.
 	//
 	// That said, we have seen issues with Vulkan on Playback builds and defaulting to
@@ -104,6 +105,7 @@ void VideoBackendBase::PopulateList()
 
 	// Disable software video backend as is currently not working
 	// g_available_video_backends.push_back(std::make_unique<SW::VideoSoftware>());
+  g_available_video_backends.push_back(std::make_unique<Null::VideoBackend>());
 
 	for (auto &backend : g_available_video_backends)
 	{
