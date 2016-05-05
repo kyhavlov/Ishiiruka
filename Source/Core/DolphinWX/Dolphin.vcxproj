@@ -173,9 +173,6 @@
     <ClCompile Include="LogWindow.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="MainMenuBar.cpp" />
-    <ClCompile Include="MainNoGUI.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="MainToolBar.cpp" />
     <ClCompile Include="MemcardManager.cpp" />
     <ClCompile Include="NetPlay\PadMapDialog.cpp" />
