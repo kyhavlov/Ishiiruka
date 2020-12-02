@@ -3,13 +3,12 @@ name: PR Builds x64
 on:
   push:
     branches:
-        - "**"
+        - slippi
     paths-ignore:
         - "**.md"
         - "**.ini"
   pull_request:
-    branches:
-      - "**"
+    branches: [ slippi ]
     paths-ignore:
       - "**.md"
       - "**.ini"
@@ -368,7 +367,7 @@ jobs:
           /usr/bin/codesign -f -s "${{ secrets.APPLE_IDENTITY_HASH }}" --deep --options runtime --entitlements Source/Core/DolphinWX/Entitlements.plist build/Binaries/Slippi\ Dolphin.app
         env:
           CERTIFICATE_MACOS_APPLICATION: ${{ secrets.CERTIFICATE_MACOS_APPLICATION }}
-          CERTIFICATE_MACOS_PASSWORD: ${{ secrets.CERTIFICATE_MACOS_PASSWORD }
+          CERTIFICATE_MACOS_PASSWORD: ${{ secrets.CERTIFICATE_MACOS_PASSWORD }}
       - name: "Package Netplay"
         if: success()
         shell: bash
@@ -391,6 +390,15 @@ jobs:
             "${FILE_NAME}" \
             "./build/Binaries/"
           mv "${FILE_NAME}" artifact/
+      - name: "Sign and Notarize Netplay DMG"
+        if: success() && env.CERTIFICATE_MACOS_APPLICATION != null
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          /usr/bin/codesign -f -s "${{ secrets.APPLE_IDENTITY_HASH }}" --deep --options runtime artifact/"${FILE_NAME}"
+          chmod +x Tools/notarize_netplay.sh && ./Tools/notarize_netplay.sh artifact/"${FILE_NAME}"
+        end:
+          CERTIFICATE_MACOS_APPLICATION: ${{ secrets.CERTIFICATE_MACOS_APPLICATION }}
       - name: "Publish"
         if: success()
         uses: actions/upload-artifact@v2-preview
