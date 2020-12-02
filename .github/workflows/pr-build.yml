@@ -398,7 +398,7 @@ jobs:
         run: |
           /usr/bin/codesign -f -s "${{ secrets.APPLE_IDENTITY_HASH }}" --deep --options runtime artifact/"${FILE_NAME}"
           chmod +x Tools/notarize_netplay.sh && ./Tools/notarize_netplay.sh artifact/"${FILE_NAME}"
-        end:
+        env:
           CERTIFICATE_MACOS_APPLICATION: ${{ secrets.CERTIFICATE_MACOS_APPLICATION }}
       - name: "Publish"
         if: success()
