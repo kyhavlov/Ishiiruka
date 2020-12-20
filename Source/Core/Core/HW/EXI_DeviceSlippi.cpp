@@ -450,16 +450,21 @@ void CEXISlippi::writeToFile(std::unique_ptr<WriteMessage> msg)
 		if (slippi_netplay)
 		{
 			auto userInfo = user->GetUserInfo();
-			auto oppInfo = matchmaking->GetOpponent();
+			auto oppInfo = matchmaking->PlayerNames();
 
-			auto isDecider = slippi_netplay->IsDecider();
-			int local_port = isDecider ? 0 : 1;
-			int remote_port = isDecider ? 1 : 0;
-
-			slippi_names[local_port] = userInfo.displayName;
-			slippi_connect_codes[local_port] = userInfo.connectCode;
-			slippi_names[remote_port] = oppInfo.displayName;
-			slippi_connect_codes[remote_port] = oppInfo.connectCode;
+			for (int i = 0; i < SLIPPI_REMOTE_PLAYER_COUNT+1; i++)
+			{
+				if (i == slippi_netplay->LocalPlayerPort())
+				{
+					slippi_names[i] = userInfo.displayName;
+					slippi_connect_codes[i] = userInfo.connectCode;
+				}
+				else
+				{
+					slippi_names[i] = oppInfo[i];
+					slippi_connect_codes[i] = ""; // userInfo.connectCode;
+				}
+			}
 		}
 	}
 
@@ -2100,7 +2105,7 @@ void CEXISlippi::prepareOnlineMatchState()
 
 	u8 localPlayerReady = localSelections.isCharacterSelected;
 	u8 remotePlayerReady = 0;
-	u8 localPlayerIndex = matchmaking->LocalPlayerIndex()-1;
+	u8 localPlayerIndex = matchmaking->LocalPlayerIndex();
 	u8 remotePlayerIndex = 1;
 
 	auto opponent = matchmaking->GetOpponent();
@@ -2224,13 +2229,12 @@ void CEXISlippi::prepareOnlineMatchState()
 		}
 
 		// Overwrite local player character
-		
-		onlineMatchBlock[0x60 + (lps.playerIdx-1) * 0x24] = lps.characterId;
+		onlineMatchBlock[0x60 + (lps.playerIdx) * 0x24] = lps.characterId;
 
 		// Overwrite remote player character
 		for (int i = 0; i < SLIPPI_REMOTE_PLAYER_COUNT; i++)
 		{
-			u8 idx = matchInfo->remotePlayerSelections[i].playerIdx-1;
+			u8 idx = matchInfo->remotePlayerSelections[i].playerIdx;
 			onlineMatchBlock[0x60 + idx * 0x24] = matchInfo->remotePlayerSelections[i].characterId;
 		}
 
