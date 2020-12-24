@@ -1746,6 +1746,12 @@ void CEXISlippi::startFindMatch(u8 *payload)
 	SlippiMatchmaking::MatchSearchSettings search;
 	search.mode = (SlippiMatchmaking::OnlinePlayMode)payload[0];
 
+	if (payload[1] != 8)
+	{
+		forcedError = "ASM codes version mismatch, not using v8";
+		return;
+	}
+
 	std::string shiftJisCode;
 	shiftJisCode.insert(shiftJisCode.begin(), &payload[1], &payload[1] + 18);
 	shiftJisCode.erase(std::find(shiftJisCode.begin(), shiftJisCode.end(), 0x00), shiftJisCode.end());

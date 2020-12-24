@@ -17,7 +17,6 @@ class MmMessageType
 std::string MmMessageType::CREATE_TICKET = "create-ticket";
 std::string MmMessageType::CREATE_TICKET_RESP = "create-ticket-resp";
 std::string MmMessageType::GET_TICKET_RESP = "get-ticket-resp";
-extern std::atomic<bool> connectionsReset = true;
 
 SlippiMatchmaking::SlippiMatchmaking(SlippiUser *user)
 {
@@ -322,7 +321,7 @@ void SlippiMatchmaking::startMatchmaking()
 	}
 
 	// Send message to server to create ticket
-	int version = 7;
+	int version = 8;
 	json request;
 	request["type"] = "join";
 	request["version"] = version;
