@@ -37,6 +37,8 @@
 // #include "Core/PatchEngine.h"
 #include "Core/PowerPC/PowerPC.h"
 
+#include "InputCommon/ControllerInterface/ControllerInterface.h"
+
 // For LowerRenderWindow/DoExit
 #include "UICommon/UICommon.h"
 
@@ -2654,7 +2656,7 @@ void CEXISlippi::setMatchSelections(u8 *payload)
 		// If stage requested is random, select a random stage
 		s.stageId = getRandomStage();
 	}
-	INFO_LOG(SLIPPI, "LPS set char: %d, iSS: %d, %d, stage: %d, alt stage: %d, team: %d", 
+	INFO_LOG(SLIPPI, "LPS set char: %d, iSS: %d, %d, stage: %d, alt stage: %d, team: %d",
 		s.isCharacterSelected, stageSelectOption, s.isStageSelected, s.stageId, s.alt_stage_mode, s.teamId);
 
 	s.rngOffset = generator() % 0xFFFF;
@@ -3245,6 +3247,35 @@ void CEXISlippi::handleGetRank()
 	m_read_queue.push_back(static_cast<u8>(rank_info.rank_change));
 }
 
+void CEXISlippi::prepareOverwriteInputs()
+{
+	m_read_queue.clear();
+	// If blocking pipe input is configured, this will block until pipe input is sent for this frame
+	g_controller_interface.UpdateInput();
+	std::map<int, SlippiPad> pads =	g_controller_interface.GetSlippiPads();
+
+	// Insert the pads
+	for (int i = 1; i <= 4; i++)
+	{
+		if (pads.count(i-1) != 0)
+		{
+			// Do overwrite this port
+			m_read_queue.push_back(1);
+			for (int j = 0; j < SLIPPI_PAD_DATA_SIZE; j++)
+			{
+				m_read_queue.push_back(pads[i-1].padBuf[j]);
+			}
+		}
+		else
+		{
+			// Don't overwrite this port
+			m_read_queue.push_back(0);
+			appendWordToBuffer(&m_read_queue, 0);
+			appendWordToBuffer(&m_read_queue, 0);
+		}
+	}
+}
+
 void CEXISlippi::DMAWrite(u32 _uAddr, u32 _uSize)
 {
 	u8 *memPtr = Memory::GetPointer(_uAddr);
@@ -3446,6 +3477,9 @@ void CEXISlippi::DMAWrite(u32 _uAddr, u32 _uSize)
 			slprs_fetch_match_result(slprs_exi_device_ptr, recentMmResult.id.c_str());
 			break;
 		}
+		case CMD_OVERWRITE_INPUTS:
+			prepareOverwriteInputs();
+			break;
 		default:
 			writeToFileAsync(&memPtr[bufLoc], payloadLen + 1, "");
 			m_slippiserver->write(&memPtr[bufLoc], payloadLen + 1);
