@@ -184,6 +184,7 @@ static void ThrottleCallback(u64 last_time, s64 cyclesLate)
 	const SConfig& config = SConfig::GetInstance();
 	bool frame_limiter = config.m_EmulationSpeed > 0.0f && !Core::GetIsThrottlerTempDisabled();
 	u32 next_event = GetTicksPerSecond() / 1000;
+	frame_limiter = false;  // unlimited speed
 	if (frame_limiter)
 	{
 		if (config.m_EmulationSpeed != 1.0f)
