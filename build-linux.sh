@@ -2,6 +2,14 @@
 # build-linux.sh
 
 CMAKE_FLAGS='-DLINUX_LOCAL_DEV=true'
+CMAKE_FLAGS+=' -DDISABLE_WX=true -DENABLE_HEADLESS=true'
+
+# Minimize build dependencies.
+CMAKE_FLAGS+=' -DENABLE_ALSA=false -DENABLE_PULSEAUDIO=false'
+CMAKE_FLAGS+=' -DENABLE_EVDEV=false'
+
+# Consider USE_EGL for framedumping
+# Consider TRY_X11=false
 
 PLAYBACK_CODES_PATH="./Data/PlaybackGeckoCodes/"
 
