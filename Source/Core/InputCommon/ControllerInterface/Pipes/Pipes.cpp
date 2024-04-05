@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <fcntl.h>
 #include <iostream>
@@ -213,34 +214,42 @@ void PipeDevice::AddAxis(const std::string& name, double value)
   AddAnalogInputs(ax_lo, ax_hi);
 }
 
+u8 FloatToU8(double value)
+{
+  // Match the empirical behavior of the named pipes.
+  s8 raw = std::floor((value - 0.5) * 254);
+  return reinterpret_cast<u8 &>(raw);
+}
+
 void PipeDevice::SetAxis(const std::string& entry, double value)
 {
+  value = MathUtil::Clamp(value, 0.0, 1.0);
+
   if (entry.compare("MAIN X") == 0)
   {
-    m_current_pad.padBuf[2] = u8 ((value * 255) + 128) % 256;
+    m_current_pad.padBuf[2] = FloatToU8(value);
   }
   if (entry.compare("MAIN Y") == 0)
   {
-    m_current_pad.padBuf[3] = u8 ((value * 255) + 128) % 256;
+    m_current_pad.padBuf[3] = FloatToU8(value);
   }
   if (entry.compare("C X") == 0)
   {
-    m_current_pad.padBuf[4] = u8 ((value * 255) + 128) % 256;
+    m_current_pad.padBuf[4] = FloatToU8(value);
   }
   if (entry.compare("C Y") == 0)
   {
-    m_current_pad.padBuf[5] = u8 ((value * 255) + 128) % 256;
+    m_current_pad.padBuf[5] = FloatToU8(value);
   }
   if (entry.compare("L") == 0)
   {
-    m_current_pad.padBuf[6] = u8 (value * 256);
+    m_current_pad.padBuf[6] = u8 (value * 255);
   }
   if (entry.compare("R") == 0)
   {
-    m_current_pad.padBuf[7] = u8 (value * 256);
+    m_current_pad.padBuf[7] = u8 (value * 255);
   }
 
-  value = MathUtil::Clamp(value, 0.0, 1.0);
   double hi = std::max(0.0, value - 0.5) * 2.0;
   double lo = (0.5 - std::min(0.5, value)) * 2.0;
   auto search_hi = m_axes.find(entry + " +");
