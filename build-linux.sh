@@ -32,6 +32,9 @@ cmake ${CMAKE_FLAGS} ../
 make -j$(nproc)
 popd
 
+# Rename executable for compatibility with the AppImage build script.
+mv $BINARY_PATH/dolphin-emu-nogui $BINARY_PATH/dolphin-emu
+
 # Copy the Sys folder in
 rm -rf ${BINARY_PATH}/Sys
 cp -r ${DATA_SYS_PATH} ${BINARY_PATH}

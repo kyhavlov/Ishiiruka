@@ -78,7 +78,7 @@ else
 
 		# remove existing appimage just in case
 		rm -f ${NETPLAY_APPIMAGE_STRING}
-		
+
 		# Package up the update tool within the AppImage
 		cp ./Tools/appimageupdatetool ./AppDir/usr/bin/
 
