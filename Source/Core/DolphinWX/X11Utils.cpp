@@ -5,6 +5,7 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <cstring>
 
 #include "Common/Logging/Log.h"
 #include "Core/ConfigManager.h"
