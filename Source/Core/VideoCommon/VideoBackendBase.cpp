@@ -105,7 +105,11 @@ void VideoBackendBase::PopulateList()
 
 	// Disable software video backend as is currently not working
 	// g_available_video_backends.push_back(std::make_unique<SW::VideoSoftware>());
+
+  // TODO: write vcxproj files for Null backend
+#ifndef _WIN32
 	g_available_video_backends.push_back(std::make_unique<Null::VideoBackend>());
+#endif
 
 	for (auto &backend : g_available_video_backends)
 	{
