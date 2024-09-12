@@ -287,8 +287,9 @@ void SlippiSpectateServer::SlippicommSocketThread(void)
 	//  This typically only takes a few seconds
 	ENetHost *server = enet_host_create(&server_address, MAX_CLIENTS, 2, 0, 0);
 	int tries = 0;
-	while (server == nullptr && tries < 20)
+	while (server == nullptr && tries < 5)
 	{
+		WARN_LOG(SLIPPI, "Could not create spectator server on port %d", server_address.port);
 		server = enet_host_create(&server_address, MAX_CLIENTS, 2, 0, 0);
 		tries += 1;
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -296,7 +297,7 @@ void SlippiSpectateServer::SlippicommSocketThread(void)
 
 	if (server == nullptr)
 	{
-		WARN_LOG(SLIPPI, "Could not create spectator server");
+		WARN_LOG(SLIPPI, "Could not create spectator server on port %d", server_address.port);
 		enet_deinitialize();
 		return;
 	}
