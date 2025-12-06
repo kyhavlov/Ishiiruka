@@ -1,9 +1,9 @@
 #!/bin/bash -e
 # build-appimage.sh
 
-NETPLAY_ZSYNC_STRING="gh-releases-zsync|project-slippi|Ishiiruka|latest|Slippi_Online-x86_64.AppImage.zsync"
+NETPLAY_ZSYNC_STRING="gh-releases-zsync|project-slippi|Ishiiruka|latest|Slippi_Online-x86_64-ExiAI.AppImage.zsync"
 PLAYBACK_ZSYNC_STRING="gh-releases-zsync|project-slippi|Ishiiruka-Playback|latest|Slippi_Playback-x86_64.AppImage.zsync"
-NETPLAY_APPIMAGE_STRING="Slippi_Online-x86_64.AppImage"
+NETPLAY_APPIMAGE_STRING="Slippi_Online-x86_64-ExiAI.AppImage"
 PLAYBACK_APPIMAGE_STRING="Slippi_Playback-x86_64.AppImage"
 OUTPUT="${NETPLAY_APPIMAGE_STRING}"
 UPDATE_INFORMATION=""
@@ -90,7 +90,7 @@ fi
 rm -f ./AppDir/usr/lib/libgmodule*
 
 # Remove librsvg2, which causes a crash on fedora 41+ systems
-rm ./AppDir/usr/lib/librsvg-2.so.2
+# rm ./AppDir/usr/lib/librsvg-2.so.2
 
 # Bake appimage
 UPDATE_INFORMATION="${UPDATE_INFORMATION}" OUTPUT="${OUTPUT}" ./Tools/linuxdeploy-update-plugin --appdir=./AppDir/
