@@ -10,6 +10,7 @@
 #include "Common/FileUtil.h"
 #include "Core/HW/EXI_Device.h"
 #include "Core/Slippi/SlippiDirectCodes.h"
+#include "Core/Slippi/EngineDumpWriter.h"
 #include "Core/Slippi/SlippiExiTypes.h"
 #include "Core/Slippi/SlippiGameFileLoader.h"
 #include "Core/Slippi/SlippiMatchmaking.h"
@@ -355,6 +356,7 @@ class CEXISlippi : public IEXIDevice
 	std::unique_ptr<SlippiMatchmaking> matchmaking;
 	std::unique_ptr<SlippiDirectCodes> directCodes;
 	std::unique_ptr<SlippiDirectCodes> teamsCodes;
+	std::unique_ptr<EngineDumpWriter> engineDumpWriter;
 
 	std::map<s32, std::unique_ptr<SlippiSavestate>> activeSavestates;
 	std::deque<std::unique_ptr<SlippiSavestate>> availableSavestates;

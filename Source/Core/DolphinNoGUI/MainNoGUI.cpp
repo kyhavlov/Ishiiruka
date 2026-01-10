@@ -387,18 +387,27 @@ static Platform* GetPlatform()
 int main(int argc, char* argv[])
 {
 	int ch, help = 0;
+#ifdef IS_PLAYBACK
+	bool slippi_step = false;
+	bool slippi_input_set = false;
+	std::string slippi_input_path;
+#endif
 	struct option longopts[] = {
 		{ "exec", no_argument, nullptr, 'e' },
 		{ "help", no_argument, nullptr, 'h' },
 		{ "version", no_argument, nullptr, 'v' },
 		{ "user", optional_argument, nullptr, 'u'},
+#ifdef IS_PLAYBACK
+		{ "slippi-input", required_argument, nullptr, 'i' },
+		{ "slippi-step", no_argument, nullptr, 's' },
+#endif
 		{ nullptr, 0, nullptr, 0 }
 	};
 
 	std::string iso_path = "";
 	std::string user_path = "";
 
-	while ((ch = getopt_long(argc, argv, "e:h?vu:", longopts, 0)) != -1)
+	while ((ch = getopt_long(argc, argv, "e:h?vu:i:s", longopts, 0)) != -1)
 	{
 		switch (ch)
 		{
@@ -408,6 +417,15 @@ int main(int argc, char* argv[])
 		case 'u':
 			user_path.assign(optarg);
 			break;
+#ifdef IS_PLAYBACK
+		case 'i':
+			slippi_input_set = true;
+			slippi_input_path.assign(optarg);
+			break;
+		case 's':
+			slippi_step = true;
+			break;
+#endif
 		case 'h':
 		case '?':
 			help = 1;
@@ -425,6 +443,10 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "Usage: %s [-e <file>] [-h] [-v]\n", argv[0]);
 		fprintf(stderr, "  -e, --exec     Load the specified file\n");
 		fprintf(stderr, "  -u, --user     Dolphin user directory\n");
+#ifdef IS_PLAYBACK
+		fprintf(stderr, "  -i, --slippi-input  Slippi playback config file (default: Slippi/playback.txt)\n");
+		fprintf(stderr, "  -s, --slippi-step   Pause playback and require external step commands\n");
+#endif
 		fprintf(stderr, "  -h, --help     Show this help message\n");
 		fprintf(stderr, "  -v, --version  Print version and exit\n");
 		return 1;
@@ -439,6 +461,16 @@ int main(int argc, char* argv[])
 
 	UICommon::SetUserDirectory(user_path);
 	UICommon::Init();
+
+#ifdef IS_PLAYBACK
+	if (slippi_input_set)
+		SConfig::GetInstance().m_strSlippiInput = slippi_input_path;
+	else
+		SConfig::GetInstance().m_strSlippiInput = "Slippi/playback.txt";
+
+	if (slippi_step)
+		SConfig::GetInstance().m_slippiPlaybackStep = true;
+#endif
 
 	Core::SetOnStoppedCallback([]() { s_running.Clear(); });
 	platform->Init();

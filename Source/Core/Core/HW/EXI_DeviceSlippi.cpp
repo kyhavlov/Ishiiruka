@@ -298,6 +298,12 @@ CEXISlippi::~CEXISlippi()
 {
 	u8 empty[1];
 
+	if (engineDumpWriter)
+	{
+		engineDumpWriter->Finalize();
+		engineDumpWriter.reset();
+	}
+
 	// Closes file gracefully to prevent file corruption when emulation
 	// suddenly stops. This would happen often on netplay when the opponent
 	// would close the emulation before the file successfully finished writing
@@ -1100,6 +1106,7 @@ void CEXISlippi::prepareFrameData(u8 *payload)
 	}
 
 	auto commSettings = g_replayComm->getSettings();
+	g_playbackStatus->setBlockOnFrame(commSettings.blockOnFrame);
 	if (commSettings.rollbackDisplayMethod == "normal")
 	{
 		auto nextFrame = m_current_game->GetFrameAt(frameSeqIdx);
@@ -1138,7 +1145,13 @@ void CEXISlippi::prepareFrameData(u8 *payload)
 		g_playbackStatus->setHardFFW(false);
 	}
 
-	bool shouldFFW = g_playbackStatus->shouldFFWFrame(frameIndex);
+	bool dumpActive = engineDumpWriter && engineDumpWriter->IsEnabled();
+	if (commSettings.blockOnFrame || dumpActive)
+	{
+		g_playbackStatus->isSoftFFW = false;
+		g_playbackStatus->setHardFFW(false);
+	}
+	bool shouldFFW = (commSettings.blockOnFrame || dumpActive) ? false : g_playbackStatus->shouldFFWFrame(frameIndex);
 	u8 requestResultCode = shouldFFW ? FRAME_RESP_FASTFORWARD : FRAME_RESP_CONTINUE;
 	if (!isFrameReady)
 	{
@@ -1213,6 +1226,14 @@ void CEXISlippi::prepareFrameData(u8 *payload)
 	if (commSettings.mode == "normal" || commSettings.mode == "queue")
 	{
 		g_playbackStatus->prepareSlippiPlayback(frame->frame);
+		if (commSettings.blockOnFrame)
+		{
+			g_playbackStatus->waitOnFrame(frame->frame);
+		}
+		if (engineDumpWriter && engineDumpWriter->IsEnabled())
+		{
+			engineDumpWriter->CaptureFrame(frame->frame, frame);
+		}
 	}
 
 	// Push RB code
@@ -1267,6 +1288,12 @@ void CEXISlippi::prepareIsFileReady()
 {
 	m_read_queue.clear();
 
+	if (engineDumpWriter)
+	{
+		engineDumpWriter->Finalize();
+		engineDumpWriter.reset();
+	}
+
 	// Hides frame index message on waiting for game screen
 	OSD::AddTypedMessage(OSD::MessageType::FrameIndex, "", 0, OSD::Color::CYAN);
 
@@ -1308,6 +1335,23 @@ void CEXISlippi::prepareIsFileReady()
 
 	// Clear playback control related vars
 	g_playbackStatus->resetPlayback();
+
+	auto replayCommSettings = g_replayComm->getSettings();
+	if (!replayCommSettings.engineDumpPath.empty())
+	{
+		int end_frame = g_replayComm->current.endFrame;
+		int latest_frame = m_current_game->GetLatestIndex();
+		if (end_frame == INT_MAX || end_frame > latest_frame)
+			end_frame = latest_frame;
+		engineDumpWriter = std::make_unique<EngineDumpWriter>(
+		    replayCommSettings.engineDumpPath, g_replayComm->current.startFrame, end_frame);
+		if (engineDumpWriter)
+		{
+			auto settings = m_current_game->GetSettings();
+			if (settings)
+				engineDumpWriter->SetGameSettings(*settings);
+		}
+	}
 
 	// Start the playback!
 	m_read_queue.push_back(1);

@@ -194,6 +194,7 @@ set(SRCS	ActionReplay.cpp
 			Slippi/SlippiMatchmaking.cpp
 			Slippi/SlippiNetplay.cpp
 			Slippi/SlippiPad.cpp
+			Slippi/EngineDumpWriter.cpp
 			Slippi/SlippiPlayback.cpp
 			Slippi/SlippiReplayComm.cpp
 			Slippi/SlippiSavestate.cpp

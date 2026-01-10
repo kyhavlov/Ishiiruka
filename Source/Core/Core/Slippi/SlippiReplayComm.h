@@ -28,6 +28,8 @@ class SlippiReplayComm
 		bool isRealTimeMode;
 		bool shouldResync;                 // If true, logic will attempt to resync games
 		std::string rollbackDisplayMethod; // off, normal, visible
+		bool blockOnFrame;                 // If true, block playback on each frame until acknowledged
+		std::string engineDumpPath;
 		std::string commandId;
 		std::string gameStation;
 		std::queue<WatchSettings> queue;

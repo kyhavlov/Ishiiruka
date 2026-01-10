@@ -176,6 +176,7 @@ struct SConfig : NonCopyable
 
 	// Slippi Playback
 	bool m_slippiEnableFrameIndex = false;
+	bool m_slippiPlaybackStep = false;
 
 	bool bDPL2Decoder = false;
 	bool bTimeStretching = false;

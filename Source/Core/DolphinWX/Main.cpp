@@ -173,6 +173,9 @@ bool DolphinApp::OnInit()
 
 	if (m_enable_cout) // Enable cout if necessary by cmd line (mostly for external recording applications)
 		SConfig::GetInstance().m_coutEnabled = true;
+
+	if (m_slippi_step)
+		SConfig::GetInstance().m_slippiPlaybackStep = true;
 #endif
 
 	if (m_select_output_directory && !m_output_directory.empty())
@@ -348,6 +351,8 @@ void DolphinApp::OnInitCmdLine(wxCmdLineParser &parser)
 	     wxCMD_LINE_PARAM_OPTIONAL},
 	    {wxCMD_LINE_SWITCH, nullptr, "cout", "Enable cout during playback", wxCMD_LINE_VAL_NONE,
 	     wxCMD_LINE_PARAM_OPTIONAL},
+	    {wxCMD_LINE_SWITCH, nullptr, "slippi-step", "Pause playback and require external step commands",
+	     wxCMD_LINE_VAL_NONE, wxCMD_LINE_PARAM_OPTIONAL},
 #endif
 	    {wxCMD_LINE_OPTION, "m", "movie", "Play a movie file", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL},
 	    {wxCMD_LINE_OPTION, "u", "user", "User folder path", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL},
@@ -415,6 +420,7 @@ bool DolphinApp::OnCmdLineParsed(wxCmdLineParser &parser)
 	m_select_slippi_input = parser.Found("slippi-input", &m_slippi_input_name);
 	m_hide_seekbar = parser.Found("hide-seekbar");
 	m_enable_cout = parser.Found("cout");
+	m_slippi_step = parser.Found("slippi-step");
 #endif
 	m_select_output_directory = parser.Found("output-directory", &m_output_directory);
 	m_select_output_filename_base = parser.Found("output-filename-base", &m_output_filename_base);
