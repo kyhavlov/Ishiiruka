@@ -11,7 +11,7 @@
 namespace {
 constexpr u8 ENGINE_DUMP_MAGIC[8] = {'M', 'S', 'I', 'M', 'D', 'M', 'P', 0};
 constexpr u32 ENGINE_DUMP_ENDIAN_TAG = 0x01020304;
-constexpr u32 ENGINE_DUMP_VERSION = 1;
+constexpr u32 ENGINE_DUMP_VERSION = 3;
 
 constexpr u32 R13_BASE = 0x804DB6A0;
 constexpr u32 FRAME_INDEX_PTR = R13_BASE - 0x49AC;
@@ -32,6 +32,7 @@ constexpr u32 FIGHTER_GROUND_OR_AIR_OFF = 0xE0;
 constexpr u32 FIGHTER_FACING_OFF = 0x2C;
 constexpr u32 FIGHTER_PERCENT_OFF = 0x1830;
 constexpr u32 FIGHTER_TEAM_OFF = 0x61B;
+constexpr u32 FIGHTER_COSTUME_OFF = 0x619;
 constexpr u32 FIGHTER_STATE_FLAGS_2218_OFF = 0x2218;
 constexpr u32 FIGHTER_STATE_FLAGS_221A_OFF = 0x221A;
 constexpr u32 FIGHTER_STATE_FLAGS_221B_OFF = 0x221B;
@@ -66,6 +67,11 @@ constexpr u32 ITEM_HITBOX0_OFF = 0x5D4;
 constexpr u32 ITEM_OWNER_OFF = 0x518;
 constexpr u32 MAX_ITEMS = 15;
 constexpr u32 RNG_STATE_ADDR = 0x804D5F90;
+constexpr u32 RNG_MULTIPLIER = 0x343FD;
+constexpr u32 RNG_INCREMENT = 0x269EC3;
+constexpr u16 FRAME_FLAG_RNG_SEED_EXISTS = 1u << 0;
+constexpr u32 RNG_STEPS_UNKNOWN = 0xFFFFFFFFu;
+constexpr u32 RNG_STEP_SEARCH_MAX = 8192;
 constexpr u32 GAME_TIMER_ADDR = 0x8046B6C8;
 constexpr u32 TEAMS_FLAG_ADDR = 0x804807C8;
 constexpr u32 P1_STOCK_ADDR = 0x8045310E;
@@ -102,6 +108,25 @@ inline u32 FloatBits(float v)
 	u32 bits = 0;
 	std::memcpy(&bits, &v, sizeof(bits));
 	return bits;
+}
+
+inline u32 AdvanceRng(u32 state)
+{
+	return state * RNG_MULTIPLIER + RNG_INCREMENT;
+}
+
+inline u32 RngStepsBetween(u32 start, u32 target, u32 max_steps)
+{
+	u32 state = start;
+	if (state == target)
+		return 0;
+	for (u32 step = 1; step <= max_steps; step++)
+	{
+		state = AdvanceRng(state);
+		if (state == target)
+			return step;
+	}
+	return RNG_STEPS_UNKNOWN;
 }
 
 inline void AppendU8(std::vector<u8>& out, u8 v)
@@ -190,14 +215,26 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 	m_is_teams = ReadU8(TEAMS_FLAG_ADDR);
 
 	u32 rng_state = ReadU32(RNG_STATE_ADDR);
+	u16 frame_flags = 0;
+	u32 rng_seed = 0;
+	if (frame->randomSeedExists)
+	{
+		frame_flags |= FRAME_FLAG_RNG_SEED_EXISTS;
+		rng_seed = *(u32 *)&frame->randomSeed;
+	}
+	u32 rng_steps = m_last_rng_seed_valid
+	                    ? RngStepsBetween(m_last_rng_seed, rng_state, RNG_STEP_SEARCH_MAX)
+	                    : RNG_STEPS_UNKNOWN;
 	u32 game_timer = ReadU32(GAME_TIMER_ADDR);
 
 	FrameRecord fr = {};
 	fr.frame_index = frame_index;
 	fr.rng_state = rng_state;
+	fr.rng_seed = rng_seed;
+	fr.rng_steps = rng_steps;
 	fr.item_offset = static_cast<u32>(m_items.size());
 	fr.item_count = 0;
-	fr.flags = 0;
+	fr.flags = frame_flags;
 	fr.game_timer = game_timer;
 	fr.randall_exists = 0;
 	fr.randall_x_bits = 0;
@@ -270,7 +307,7 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		f.ground_or_air = static_cast<u8>(ReadU32(fp_ptr + FIGHTER_GROUND_OR_AIR_OFF) & 0xFF);
 		f.stocks = (port == 1) ? ReadU8(P1_STOCK_ADDR) : ReadU8(P2_STOCK_ADDR);
 		f.team = ReadU8(fp_ptr + FIGHTER_TEAM_OFF);
-		f.reserved0 = 0;
+		f.costume_id = ReadU8(fp_ptr + FIGHTER_COSTUME_OFF);
 		f.facing_bits = ReadU32(fp_ptr + FIGHTER_FACING_OFF);
 		f.percent_bits = ReadU32(fp_ptr + FIGHTER_PERCENT_OFF);
 		f.hitlag_left_bits = ReadU32(fp_ptr + FIGHTER_HITLAG_OFF);
@@ -314,7 +351,10 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 			hb.b_pos_z_bits = ReadU32(base + 0x3C);
 			hb.bone_index = static_cast<s32>(ReadU32(base + 0x40));
 			hb.height = ReadU32(base + 0x44);
-			hb.is_grabbable = ReadU8(base + 0x48);
+			// `FighterHurtCapsule::is_grabbable` is written as a 32-bit value in the retail binary
+			// (`ftColl_HurtboxInit` uses `stw r7, 0x48(r4)`), so reading a single byte would grab
+			// the MSB (0) on big-endian for `0x00000001`. Use the low byte.
+			hb.is_grabbable = static_cast<u8>(ReadU32(base + 0x48) & 0xFF);
 			m_hurtboxes.push_back(hb);
 		}
 	}
@@ -391,6 +431,11 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 	}
 
 	m_frames.push_back(fr);
+	if (frame_flags & FRAME_FLAG_RNG_SEED_EXISTS)
+	{
+		m_last_rng_seed = rng_seed;
+		m_last_rng_seed_valid = true;
+	}
 
 	if (frame_index >= m_end_frame)
 		Finalize();
@@ -405,7 +450,7 @@ void EngineDumpWriter::Finalize()
 	const u32 port_count = m_port_count;
 	const u32 total_items = static_cast<u32>(m_items.size());
 
-	const u32 frame_rec_size = 40;
+	const u32 frame_rec_size = 48;
 	const u32 input_rec_size = 28;
 	const u32 fighter_rec_size = 104;
 	const u32 item_rec_size = 54;
@@ -449,6 +494,8 @@ void EngineDumpWriter::Finalize()
 	{
 		AppendI32(out, fr.frame_index);
 		AppendU32(out, fr.rng_state);
+		AppendU32(out, fr.rng_seed);
+		AppendU32(out, fr.rng_steps);
 		AppendU16(out, fr.item_count);
 		AppendU32(out, fr.item_offset);
 		AppendU16(out, fr.flags);
@@ -496,7 +543,7 @@ void EngineDumpWriter::Finalize()
 		AppendU8(out, f.ground_or_air);
 		AppendU8(out, f.stocks);
 		AppendU8(out, f.team);
-		AppendU8(out, f.reserved0);
+		AppendU8(out, f.costume_id);
 		AppendU32(out, f.facing_bits);
 		AppendU32(out, f.percent_bits);
 		AppendU32(out, f.hitlag_left_bits);

@@ -27,11 +27,15 @@ private:
 	u8 m_port_count = 2;
 	u16 m_stage_id = 0;
 	u8 m_is_teams = 0;
+	u32 m_last_rng_seed = 0;
+	bool m_last_rng_seed_valid = false;
 
 	struct FrameRecord
 	{
 		s32 frame_index;
 		u32 rng_state;
+		u32 rng_seed;
+		u32 rng_steps;
 		u16 item_count;
 		u32 item_offset;
 		u16 flags;
@@ -74,11 +78,11 @@ private:
 		u8 state_flags_221b;
 		u8 state_flags_221c;
 	u8 state_flags_221f;
-	u8 invulnerable;
-	u8 ground_or_air;
-	u8 stocks;
+		u8 invulnerable;
+		u8 ground_or_air;
+		u8 stocks;
 		u8 team;
-		u8 reserved0;
+		u8 costume_id;
 		u32 facing_bits;
 		u32 percent_bits;
 		u32 hitlag_left_bits;
