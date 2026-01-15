@@ -58,6 +58,12 @@ private:
 		u32 cstick_y_bits;
 		u32 l_shoulder_bits;
 		u32 r_shoulder_bits;
+		// Raw analog inputs from the replay (signed i8 in Slippi; stored as raw bits here).
+		// These are needed for UCF 0.84 cardinals + dashback semantics.
+		u8 raw_stick_x;
+		u8 raw_stick_y;
+		u8 raw_cstick_x;
+		u8 raw_cstick_y;
 	};
 
 	struct FighterRecord
@@ -77,7 +83,7 @@ private:
 		u8 state_flags_221a;
 		u8 state_flags_221b;
 		u8 state_flags_221c;
-	u8 state_flags_221f;
+		u8 state_flags_221f;
 		u8 invulnerable;
 		u8 ground_or_air;
 		u8 stocks;
@@ -86,7 +92,7 @@ private:
 		u32 facing_bits;
 		u32 percent_bits;
 		u32 hitlag_left_bits;
-	u32 misc_as_bits;
+		u32 misc_as_bits;
 		u32 shield_health_bits;
 		u32 ecb_top_x_bits;
 		u32 ecb_top_y_bits;
@@ -96,6 +102,12 @@ private:
 		u32 ecb_left_y_bits;
 		u32 ecb_right_x_bits;
 		u32 ecb_right_y_bits;
+		u32 floor_normal_x_bits;
+		u32 floor_normal_y_bits;
+		u32 ground_accel_1_bits;
+		u32 ground_accel_2_bits;
+		u32 anim_vel_x_bits;
+		u32 anim_vel_y_bits;
 	};
 
 	struct ItemRecord

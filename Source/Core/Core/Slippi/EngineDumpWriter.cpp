@@ -11,7 +11,7 @@
 namespace {
 constexpr u8 ENGINE_DUMP_MAGIC[8] = {'M', 'S', 'I', 'M', 'D', 'M', 'P', 0};
 constexpr u32 ENGINE_DUMP_ENDIAN_TAG = 0x01020304;
-constexpr u32 ENGINE_DUMP_VERSION = 3;
+constexpr u32 ENGINE_DUMP_VERSION = 6;
 
 constexpr u32 R13_BASE = 0x804DB6A0;
 constexpr u32 FRAME_INDEX_PTR = R13_BASE - 0x49AC;
@@ -47,6 +47,12 @@ constexpr u32 FIGHTER_ECB_TOP_OFF = 0x794;
 constexpr u32 FIGHTER_ECB_BOTTOM_OFF = 0x79C;
 constexpr u32 FIGHTER_ECB_RIGHT_OFF = 0x7A4;
 constexpr u32 FIGHTER_ECB_LEFT_OFF = 0x7AC;
+constexpr u32 FIGHTER_FLOOR_NORMAL_X_OFF = 0x844;
+constexpr u32 FIGHTER_FLOOR_NORMAL_Y_OFF = 0x848;
+constexpr u32 FIGHTER_GROUND_ACCEL_1_OFF = 0xE4;
+constexpr u32 FIGHTER_GROUND_ACCEL_2_OFF = 0xE8;
+constexpr u32 FIGHTER_ANIM_VEL_X_OFF = 0x74;
+constexpr u32 FIGHTER_ANIM_VEL_Y_OFF = 0x78;
 constexpr u32 FIGHTER_HITBOX_BASE_OFF = 0x914;
 constexpr u32 HITBOX_STRIDE = 0x138;
 constexpr u32 FIGHTER_HURTBOX_BASE_OFF = 0x11A0;
@@ -277,6 +283,10 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 			in.cstick_y_bits = FloatBits(pdata->cstickY);
 			in.l_shoulder_bits = FloatBits(l_trig);
 			in.r_shoulder_bits = FloatBits(r_trig);
+			in.raw_stick_x = pdata->joystickXRaw;
+			in.raw_stick_y = pdata->joystickYRaw;
+			in.raw_cstick_x = pdata->cstickXRaw;
+			in.raw_cstick_y = pdata->cstickYRaw;
 		}
 		m_inputs.push_back(in);
 	}
@@ -321,6 +331,12 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		f.ecb_left_y_bits = ReadU32(fp_ptr + FIGHTER_ECB_LEFT_OFF + 0x04);
 		f.ecb_right_x_bits = ReadU32(fp_ptr + FIGHTER_ECB_RIGHT_OFF + 0x00);
 		f.ecb_right_y_bits = ReadU32(fp_ptr + FIGHTER_ECB_RIGHT_OFF + 0x04);
+		f.floor_normal_x_bits = ReadU32(fp_ptr + FIGHTER_FLOOR_NORMAL_X_OFF);
+		f.floor_normal_y_bits = ReadU32(fp_ptr + FIGHTER_FLOOR_NORMAL_Y_OFF);
+		f.ground_accel_1_bits = ReadU32(fp_ptr + FIGHTER_GROUND_ACCEL_1_OFF);
+		f.ground_accel_2_bits = ReadU32(fp_ptr + FIGHTER_GROUND_ACCEL_2_OFF);
+		f.anim_vel_x_bits = ReadU32(fp_ptr + FIGHTER_ANIM_VEL_X_OFF);
+		f.anim_vel_y_bits = ReadU32(fp_ptr + FIGHTER_ANIM_VEL_Y_OFF);
 		m_fighters.push_back(f);
 	};
 
@@ -451,8 +467,8 @@ void EngineDumpWriter::Finalize()
 	const u32 total_items = static_cast<u32>(m_items.size());
 
 	const u32 frame_rec_size = 48;
-	const u32 input_rec_size = 28;
-	const u32 fighter_rec_size = 104;
+	const u32 input_rec_size = 32;
+	const u32 fighter_rec_size = 128;
 	const u32 item_rec_size = 54;
 	const u32 hitbox_rec_size = 88;
 	const u32 hurtbox_rec_size = 68;
@@ -519,6 +535,10 @@ void EngineDumpWriter::Finalize()
 		AppendU32(out, in.cstick_y_bits);
 		AppendU32(out, in.l_shoulder_bits);
 		AppendU32(out, in.r_shoulder_bits);
+		AppendU8(out, in.raw_stick_x);
+		AppendU8(out, in.raw_stick_y);
+		AppendU8(out, in.raw_cstick_x);
+		AppendU8(out, in.raw_cstick_y);
 	}
 
 	for (const auto& f : m_fighters)
@@ -557,6 +577,12 @@ void EngineDumpWriter::Finalize()
 		AppendU32(out, f.ecb_left_y_bits);
 		AppendU32(out, f.ecb_right_x_bits);
 		AppendU32(out, f.ecb_right_y_bits);
+		AppendU32(out, f.floor_normal_x_bits);
+		AppendU32(out, f.floor_normal_y_bits);
+		AppendU32(out, f.ground_accel_1_bits);
+		AppendU32(out, f.ground_accel_2_bits);
+		AppendU32(out, f.anim_vel_x_bits);
+		AppendU32(out, f.anim_vel_y_bits);
 		AppendU16(out, 0);
 	}
 
