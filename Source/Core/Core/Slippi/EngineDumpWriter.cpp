@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <unordered_map>
 
 #include "Common/FileUtil.h"
@@ -11,7 +12,7 @@
 namespace {
 constexpr u8 ENGINE_DUMP_MAGIC[8] = {'M', 'S', 'I', 'M', 'D', 'M', 'P', 0};
 constexpr u32 ENGINE_DUMP_ENDIAN_TAG = 0x01020304;
-constexpr u32 ENGINE_DUMP_VERSION = 6;
+constexpr u32 ENGINE_DUMP_VERSION = 7;
 
 constexpr u32 R13_BASE = 0x804DB6A0;
 constexpr u32 FRAME_INDEX_PTR = R13_BASE - 0x49AC;
@@ -27,7 +28,13 @@ constexpr u32 FIGHTER_GR_VEL_OFF = 0xEC;
 constexpr u32 FIGHTER_ACTION_OFF = 0x10;
 constexpr u32 FIGHTER_ANIM_OFF = 0x14;
 constexpr u32 FIGHTER_ACTION_FRAME_OFF = 0x894;
+constexpr u32 FIGHTER_BLEND_FRAMES_OFF = 0x8A4;
 constexpr u32 FIGHTER_ANIM_FRAME_OFF = 0x8A8;
+constexpr u32 FIGHTER_X8B0_OFF = 0x8B0;
+constexpr u32 FIGHTER_X8B0_STRIDE = 0x14;
+constexpr u32 FIGHTER_FT_DATA_PTR_OFF = 0x10C;
+constexpr u32 FTDATA_X20_PTR_OFF = 0x20;
+constexpr u32 FTDATA_X20_JOINT_OFF = 0x04;
 constexpr u32 FIGHTER_GROUND_OR_AIR_OFF = 0xE0;
 constexpr u32 FIGHTER_FACING_OFF = 0x2C;
 constexpr u32 FIGHTER_PERCENT_OFF = 0x1830;
@@ -38,6 +45,16 @@ constexpr u32 FIGHTER_STATE_FLAGS_221A_OFF = 0x221A;
 constexpr u32 FIGHTER_STATE_FLAGS_221B_OFF = 0x221B;
 constexpr u32 FIGHTER_STATE_FLAGS_221C_OFF = 0x221C;
 constexpr u32 FIGHTER_STATE_FLAGS_221F_OFF = 0x221F;
+constexpr u32 FIGHTER_PARTS_PTR_OFF = 0x5E8;
+constexpr u32 FIGHTER_BONE_STRIDE = 0x10;
+constexpr u32 FIGHTER_BONE_JOBJ_PTR_OFF = 0x00;
+
+constexpr u32 HSD_JOBJ_FLAGS_OFF = 0x14;
+constexpr u32 HSD_JOBJ_ROTATE_X_OFF = 0x1C;
+constexpr u32 HSD_JOBJ_ROTATE_Y_OFF = 0x20;
+constexpr u32 HSD_JOBJ_ROTATE_Z_OFF = 0x24;
+constexpr u32 HSD_JOBJ_ROTATE_W_OFF = 0x28;
+constexpr u32 HSD_JOBJ_MTX_OFF = 0x44;
 constexpr u32 FIGHTER_HITLAG_OFF = 0x195C;
 constexpr u32 FIGHTER_MISC_AS_OFF = 0x2340;
 constexpr u32 FIGHTER_SHIELD_HEALTH_OFF = 0x1998;
@@ -55,6 +72,12 @@ constexpr u32 FIGHTER_ANIM_VEL_X_OFF = 0x74;
 constexpr u32 FIGHTER_ANIM_VEL_Y_OFF = 0x78;
 constexpr u32 FIGHTER_HITBOX_BASE_OFF = 0x914;
 constexpr u32 HITBOX_STRIDE = 0x138;
+constexpr u32 HITBOX_VICTIMS1_CURSOR_OFF = 0x44;
+constexpr u32 HITBOX_VICTIMS2_CURSOR_OFF = 0x45;
+constexpr u32 HITBOX_VICTIMS1_BASE_OFF = 0x74;
+constexpr u32 HITBOX_VICTIMS2_BASE_OFF = 0xD4;
+constexpr u32 HITBOX_VICTIM_STRIDE = 0x8;
+constexpr u32 HITBOX_OWNER_OFF = 0x134;
 constexpr u32 FIGHTER_HURTBOX_BASE_OFF = 0x11A0;
 constexpr u32 HURTBOX_STRIDE = 0x4C;
 constexpr u32 ITEM_MANAGER_PTR = R13_BASE - 0x3E74;
@@ -375,10 +398,108 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		}
 	}
 
-	for (int port = 1; port <= 2; port++)
-	{
-		u32 fp_ptr = (port == 1) ? fp1 : fp2;
-		for (u32 idx = 0; idx < 4; idx++)
+	// Debug: capture per-joint Euler rotation + matrix bits for a known mismatch frame.
+	// This is intentionally sidecar-only (no dump schema change).
+	//
+	// Decomp references:
+	// - Fighter.parts: fp + 0x5E8 (struct Fighter, refs/melee/src/melee/ft/types.h)
+	// - struct FighterBone: size 0x10; joint at +0 (refs/melee/src/melee/ft/types.h)
+	// - struct HSD_JObj: flags +0x14, rotate (Vec3 view) at +0x1C, mtx at +0x44
+	if (frame_index == -14 || frame_index == -13)
+		{
+			const int port = 1;
+			const u32 fp_ptr = fp1;
+			const u32 parts_ptr = ReadU32(fp_ptr + FIGHTER_PARTS_PTR_OFF);
+			static const u32 bone_idxs[] = {3, 4};
+
+			auto dump_jobj = [this](std::ofstream& dbg, const char* tag, u32 ptr) {
+				if (!ptr)
+					return;
+			const u32 jobj_flags = ReadU32(ptr + HSD_JOBJ_FLAGS_OFF);
+			const u32 rot_x_bits = ReadU32(ptr + HSD_JOBJ_ROTATE_X_OFF);
+			const u32 rot_y_bits = ReadU32(ptr + HSD_JOBJ_ROTATE_Y_OFF);
+			const u32 rot_z_bits = ReadU32(ptr + HSD_JOBJ_ROTATE_Z_OFF);
+			const u32 rot_w_bits = ReadU32(ptr + HSD_JOBJ_ROTATE_W_OFF);
+			dbg << " " << tag << "=0x" << std::hex << ptr;
+			dbg << " " << tag << "_flags=0x" << std::hex << jobj_flags;
+			dbg << " " << tag << "_rot=0x" << std::hex << rot_x_bits << ",0x" << std::hex << rot_y_bits << ",0x"
+			    << std::hex << rot_z_bits << ",0x" << std::hex << rot_w_bits;
+			dbg << " " << tag << "_mtx_bits=[";
+			for (u32 mi = 0; mi < 12; mi++)
+			{
+				if (mi)
+					dbg << ",";
+				dbg << "0x" << std::hex << ReadU32(ptr + HSD_JOBJ_MTX_OFF + mi * 4);
+			}
+				dbg << "]";
+			};
+
+			if (parts_ptr)
+			{
+				std::ofstream dbg(m_path + ".jobj_dbg.txt", std::ios::app);
+				dbg << "frame=" << frame_index << " port=" << port;
+				dbg << " fp=0x" << std::hex << fp_ptr;
+				dbg << " parts=0x" << std::hex << parts_ptr;
+				dbg << " anim_id=0x" << std::hex << ReadU32(fp_ptr + FIGHTER_ANIM_OFF);
+				dbg << " action_frame_bits=0x" << std::hex << ReadU32(fp_ptr + FIGHTER_ACTION_FRAME_OFF);
+			dbg << " blend_frames_bits=0x" << std::hex << ReadU32(fp_ptr + FIGHTER_BLEND_FRAMES_OFF);
+			dbg << " blend_frame_bits=0x" << std::hex << ReadU32(fp_ptr + FIGHTER_ANIM_FRAME_OFF);
+			const u32 ft_data_ptr = ReadU32(fp_ptr + FIGHTER_FT_DATA_PTR_OFF);
+			const u32 ftdata_x20_ptr = ft_data_ptr ? ReadU32(ft_data_ptr + FTDATA_X20_PTR_OFF) : 0;
+			dbg << " ft_data=0x" << std::hex << ft_data_ptr;
+			dbg << " ftdata_x20=0x" << std::hex << ftdata_x20_ptr;
+			if (ftdata_x20_ptr)
+			{
+				dbg << " ftdata_x20_words=[0x" << std::hex << ReadU32(ftdata_x20_ptr + 0x0);
+				dbg << ",0x" << std::hex << ReadU32(ftdata_x20_ptr + 0x4);
+				dbg << ",0x" << std::hex << ReadU32(ftdata_x20_ptr + 0x8);
+				dbg << ",0x" << std::hex << ReadU32(ftdata_x20_ptr + 0xC) << "]";
+			}
+			if (parts_ptr)
+			{
+				static const u32 watched_parts[] = {0, 1, 2, 3, 4, 6, 7, 12, 13, 18, 22, 25, 26, 41, 55, 56};
+				dbg << " watched_quat=[";
+				for (u32 wi = 0; wi < sizeof(watched_parts) / sizeof(watched_parts[0]); wi++)
+				{
+					const u32 part = watched_parts[wi];
+					const u32 bone_ptr2 = parts_ptr + part * FIGHTER_BONE_STRIDE;
+					const u32 jp = ReadU32(bone_ptr2 + 0x0);
+					const u32 fl = jp ? ReadU32(jp + HSD_JOBJ_FLAGS_OFF) : 0;
+					if (wi)
+						dbg << ",";
+					dbg << std::dec << part << ":" << (((fl & 0x20000) != 0) ? 1 : 0);
+				}
+				dbg << "]";
+			}
+			for (u32 i = 0; i < 5; i++)
+			{
+				const u32 base = fp_ptr + FIGHTER_X8B0_OFF + i * FIGHTER_X8B0_STRIDE;
+				const u32 x4_bits = ReadU32(base + 0x04);
+				const u8 x10_u = ReadU8(base + 0x10);
+				const u8 x11_u = ReadU8(base + 0x11);
+				const int x10 = x10_u >= 0x80 ? (int)x10_u - 0x100 : (int)x10_u;
+				const int x11 = x11_u >= 0x80 ? (int)x11_u - 0x100 : (int)x11_u;
+				dbg << " x8B0[" << std::dec << i << "]={x10=" << x10 << " x11=" << x11 << " x4_bits=0x"
+					    << std::hex << x4_bits << "}";
+				}
+				for (u32 bi = 0; bi < sizeof(bone_idxs) / sizeof(bone_idxs[0]); bi++)
+				{
+					const u32 bone_idx = bone_idxs[bi];
+					const u32 bone_ptr = parts_ptr + bone_idx * FIGHTER_BONE_STRIDE;
+					const u32 jobj_ptr = ReadU32(bone_ptr + 0x0);
+					const u32 jobj2_ptr = ReadU32(bone_ptr + 0x4);
+					dbg << " bone=" << std::dec << bone_idx;
+					dump_jobj(dbg, "jobj", jobj_ptr);
+					dump_jobj(dbg, "jobj2", jobj2_ptr);
+				}
+				dbg << std::dec << "\n";
+			}
+		}
+
+		for (int port = 1; port <= 2; port++)
+		{
+			u32 fp_ptr = (port == 1) ? fp1 : fp2;
+			for (u32 idx = 0; idx < 4; idx++)
 		{
 			u32 base = fp_ptr + FIGHTER_HITBOX_BASE_OFF + idx * HITBOX_STRIDE;
 			HitboxRecord hb = {};
@@ -400,13 +521,34 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 			hb.sfx_kind = ReadU32(base + 0x3C);
 			for (u32 i = 0; i < 8; i++)
 				hb.flags[i] = ReadU8(base + 0x40 + i);
-			hb.bone_ptr = ReadU32(base + 0x48);
-			hb.pos_x_bits = ReadU32(base + 0x54);
-			hb.pos_y_bits = ReadU32(base + 0x50);
-			hb.pos_z_bits = ReadU32(base + 0x4C);
-			m_hitboxes.push_back(hb);
+				hb.bone_ptr = ReadU32(base + 0x48);
+				hb.pos_x_bits = ReadU32(base + 0x54);
+				hb.pos_y_bits = ReadU32(base + 0x50);
+				hb.pos_z_bits = ReadU32(base + 0x4C);
+				m_hitboxes.push_back(hb);
+
+				HitlistRecord hl = {};
+				hl.group = ReadU32(base + 0x04);
+				// Provenance lanes for lbColl_8000ACFC victim containment and
+				// ftColl_800768A0 clear/copy ownership:
+				// - refs/melee/src/melee/lb/types.h (HitCapsule +0x44/+0x45/+0x74/+0xD4/+0x134)
+				// - refs/melee/src/melee/lb/lbcollision.c (lbColl_80008440, lbColl_CopyHitCapsule, lbColl_8000ACFC)
+				// - refs/melee/src/melee/ft/ftcoll.c (ftColl_800768A0, ftColl_80076CBC)
+				hl.victims1_cursor = ReadU8(base + HITBOX_VICTIMS1_CURSOR_OFF);
+				hl.victims2_cursor = ReadU8(base + HITBOX_VICTIMS2_CURSOR_OFF);
+				hl.owner_gobj = ReadU32(base + HITBOX_OWNER_OFF);
+				for (u32 slot = 0; slot < 12; slot++)
+				{
+					u32 v1 = base + HITBOX_VICTIMS1_BASE_OFF + slot * HITBOX_VICTIM_STRIDE;
+					u32 v2 = base + HITBOX_VICTIMS2_BASE_OFF + slot * HITBOX_VICTIM_STRIDE;
+					hl.victims1_ptr[slot] = ReadU32(v1 + 0x0);
+					hl.victims1_cooldown[slot] = ReadU32(v1 + 0x4);
+					hl.victims2_ptr[slot] = ReadU32(v2 + 0x0);
+					hl.victims2_cooldown[slot] = ReadU32(v2 + 0x4);
+				}
+				m_hitlists.push_back(hl);
+			}
 		}
-	}
 
 	std::unordered_map<u32, int> owner_map;
 	owner_map[FighterGobjForPort(1)] = 1;
@@ -472,6 +614,7 @@ void EngineDumpWriter::Finalize()
 	const u32 item_rec_size = 54;
 	const u32 hitbox_rec_size = 88;
 	const u32 hurtbox_rec_size = 68;
+	const u32 hitlist_rec_size = 204;
 
 	const u32 frames_offset = 80;
 	const u32 inputs_offset = frames_offset + frame_count * frame_rec_size;
@@ -479,9 +622,10 @@ void EngineDumpWriter::Finalize()
 	const u32 items_offset = fighters_offset + frame_count * port_count * fighter_rec_size;
 	const u32 hitboxes_offset = items_offset + total_items * item_rec_size;
 	const u32 hurtboxes_offset = hitboxes_offset + frame_count * port_count * 4 * hitbox_rec_size;
+	const u32 hitlists_offset = hurtboxes_offset + frame_count * port_count * 15 * hurtbox_rec_size;
 
 	std::vector<u8> out;
-	out.reserve(hurtboxes_offset + frame_count * port_count * 15 * hurtbox_rec_size);
+	out.reserve(hitlists_offset + frame_count * port_count * 4 * hitlist_rec_size);
 
 	for (u32 i = 0; i < 8; i++)
 		AppendU8(out, ENGINE_DUMP_MAGIC[i]);
@@ -501,7 +645,8 @@ void EngineDumpWriter::Finalize()
 	AppendU32(out, hitboxes_offset);
 	AppendU32(out, hurtboxes_offset);
 	AppendU32(out, total_items);
-	for (u32 i = 0; i < 11; i++)
+	AppendU32(out, hitlists_offset);
+	for (u32 i = 0; i < 7; i++)
 		AppendU8(out, 0);
 	while (out.size() < frames_offset)
 		out.push_back(0);
@@ -656,6 +801,23 @@ void EngineDumpWriter::Finalize()
 		AppendU16(out, 0);
 	}
 
+	for (const auto& hl : m_hitlists)
+	{
+		AppendU32(out, hl.group);
+		AppendU8(out, hl.victims1_cursor);
+		AppendU8(out, hl.victims2_cursor);
+		AppendU16(out, 0);
+		AppendU32(out, hl.owner_gobj);
+		for (u32 i = 0; i < 12; i++)
+			AppendU32(out, hl.victims1_ptr[i]);
+		for (u32 i = 0; i < 12; i++)
+			AppendU32(out, hl.victims1_cooldown[i]);
+		for (u32 i = 0; i < 12; i++)
+			AppendU32(out, hl.victims2_ptr[i]);
+		for (u32 i = 0; i < 12; i++)
+			AppendU32(out, hl.victims2_cooldown[i]);
+	}
+
 	File::CreateFullPath(m_path);
 	std::ofstream file(m_path, std::ios::binary);
 	if (!file.is_open())
@@ -669,6 +831,7 @@ void EngineDumpWriter::Finalize()
 	m_fighters.clear();
 	m_items.clear();
 	m_hitboxes.clear();
+	m_hitlists.clear();
 	m_hurtboxes.clear();
 	m_started = false;
 	m_last_frame = INT_MIN;

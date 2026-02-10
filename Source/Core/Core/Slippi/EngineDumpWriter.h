@@ -155,6 +155,19 @@ private:
 		u32 pos_z_bits;
 	};
 
+	struct HitlistRecord
+	{
+		u32 group;
+		u8 victims1_cursor;
+		u8 victims2_cursor;
+		u8 _pad0[2];
+		u32 owner_gobj;
+		u32 victims1_ptr[12];
+		u32 victims1_cooldown[12];
+		u32 victims2_ptr[12];
+		u32 victims2_cooldown[12];
+	};
+
 	struct HurtboxRecord
 	{
 		u32 state;
@@ -182,5 +195,6 @@ private:
 	std::vector<FighterRecord> m_fighters;
 	std::vector<ItemRecord> m_items;
 	std::vector<HitboxRecord> m_hitboxes;
+	std::vector<HitlistRecord> m_hitlists;
 	std::vector<HurtboxRecord> m_hurtboxes;
 };
