@@ -66,7 +66,8 @@ SlippiNetplayClient::~SlippiNetplayClient()
 
 // called from ---SLIPPI EXI--- thread
 SlippiNetplayClient::SlippiNetplayClient(std::vector<std::string> addrs, std::vector<u16> ports,
-                                         const u8 remotePlayerCount, const u16 localPort, bool isDecider, u8 playerIdx)
+                                         const u8 remotePlayerCount, const u16 localPort, bool isDecider, u8 playerIdx,
+                                         std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot)
 #ifdef _WIN32
     : m_qos_handle(nullptr)
     , m_qos_flow_id(0)
@@ -77,6 +78,7 @@ SlippiNetplayClient::SlippiNetplayClient(std::vector<std::string> addrs, std::ve
 	this->isDecider = isDecider;
 	this->m_remotePlayerCount = remotePlayerCount;
 	this->playerIdx = playerIdx;
+	this->remotePlayerIsBot = remotePlayerIsBot;
 
 	// Set up remote player data structures
 	int j = 0;
@@ -1329,7 +1331,8 @@ std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetFakePadOutput(int
 	return std::move(padOutput);
 }
 
-std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetSlippiRemotePad(int index, int maxFrameCount)
+std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetSlippiRemotePad(int index, int maxFrameCount,
+                                                                               s32 targetFrame)
 {
 	std::lock_guard<std::mutex> lk(pad_mutex); // TODO: Is this the correct lock?
 
@@ -1352,6 +1355,29 @@ std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetSlippiRemotePad(i
 	padOutput->latestFrame = 0;
 	padOutput->checksumFrame = remote_checksums[index].frame;
 	padOutput->checksum = remote_checksums[index].value;
+
+	if (targetFrame >= 0 && remotePlayerIsBot[index])
+	{
+		auto firstFrame = remotePadQueue[index].begin();
+		while (firstFrame != remotePadQueue[index].end() && (*firstFrame)->frame > targetFrame)
+			++firstFrame;
+
+		for (auto it = firstFrame; it != remotePadQueue[index].end(); ++it)
+		{
+			if ((*it)->frame > padOutput->latestFrame)
+				padOutput->latestFrame = (*it)->frame;
+
+			auto padIt = std::begin((*it)->padBuf);
+			padOutput->data.insert(padOutput->data.end(), padIt, padIt + SLIPPI_PAD_FULL_SIZE);
+
+			inputCount++;
+			if (inputCount >= maxFrameCount)
+				return std::move(padOutput);
+		}
+
+		if (inputCount > 0)
+			return std::move(padOutput);
+	}
 
 	// Copy inputs from the remote pad queue to the output. We iterate backwards because
 	// we want to get the oldest frames possible (will have been cleared to contain the last
@@ -1410,7 +1436,7 @@ int32_t SlippiNetplayClient::GetSlippiLatestRemoteFrame(int maxFrameCount)
 	bool isFrameSet = false;
 	for (int i = 0; i < m_remotePlayerCount; i++)
 	{
-		auto rp = GetSlippiRemotePad(i, maxFrameCount);
+		auto rp = GetSlippiRemotePad(i, maxFrameCount, -1);
 		int f = rp->latestFrame;
 		if (f < lowestFrame || !isFrameSet)
 		{
@@ -1425,24 +1451,10 @@ int32_t SlippiNetplayClient::GetSlippiLatestRemoteFrame(int maxFrameCount)
 // return the smallest time offset among all remote players
 s32 SlippiNetplayClient::CalcTimeOffsetUs()
 {
-	bool empty = true;
-	for (int i = 0; i < m_remotePlayerCount; i++)
-	{
-		if (!frameOffsetData[i].buf.empty())
-		{
-			empty = false;
-			break;
-		}
-	}
-	if (empty)
-	{
-		return 0;
-	}
-
 	std::vector<int> offsets;
 	for (int i = 0; i < m_remotePlayerCount; i++)
 	{
-		if (frameOffsetData[i].buf.empty())
+		if (frameOffsetData[i].buf.empty() || remotePlayerIsBot[i])
 			continue;
 
 		std::vector<s32> buf;
@@ -1469,6 +1481,11 @@ s32 SlippiNetplayClient::CalcTimeOffsetUs()
 
 		s32 result = sum / count;
 		offsets.push_back(result);
+	}
+
+	if (offsets.empty())
+	{
+		return 0;
 	}
 
 	s32 minOffset = offsets.front();

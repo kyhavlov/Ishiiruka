@@ -1486,9 +1486,11 @@ bool CEXISlippi::shouldSkipOnlineFrame(s32 frame, s32 finalizedFrame)
 
 bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 {
+	const bool isLocalPlayerBot = localPlayerIsBot();
+
 	// If the opponent is a bot running ahead to give us more inputs, we should
 	// just keep going at our own pace rather than trying to catch up.
-	if (opponentRunahead())
+	if (!isLocalPlayerBot && opponentRunahead())
 		return false;
 
 	// Logic below is used to test frame advance by forcing it more often
@@ -1508,7 +1510,12 @@ bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 	auto isTimeSyncFrame = (frame % SLIPPI_ONLINE_LOCKSTEP_INTERVAL) == 0; // Only time sync every 30 frames
 	if (isTimeSyncFrame)
 	{
+		s32 frameTime = 16683;
 		auto offsetUs = slippi_netplay->CalcTimeOffsetUs();
+		if (isLocalPlayerBot)
+		{
+			offsetUs -= SConfig::GetInstance().m_slippiOnlineDelay * frameTime;
+		}
 
 		// Dynamically adjust emulation speed in order to fine-tune time sync to reduce one sided rollbacks even more
 		// Modify emulation speed up to a max of 1% at 3 frames offset or more. Don't slow down the front instance as
@@ -1542,7 +1549,6 @@ bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 		INFO_LOG(SLIPPI_ONLINE, "[Frame %d] Offset for advance is: %d us. New speed: %.2f%%", frame, offsetUs,
 		         dynamicEmulationSpeed * 100.0f);
 
-		s32 frameTime = 16683;
 		s32 t1 = 10000;
 		s32 t2 = frameTime + t1;
 
@@ -1615,6 +1621,14 @@ void CEXISlippi::handleSendInputs(s32 frame, u8 delay, s32 checksumFrame, u32 ch
 	slippi_netplay->SendSlippiPad(std::move(pad));
 }
 
+bool CEXISlippi::localPlayerIsBot()
+{
+	auto player_info = matchmaking->GetPlayerInfo();
+	auto local_player_index = matchmaking->LocalPlayerIndex();
+	return local_player_index >= 0 && local_player_index < static_cast<int>(player_info.size()) &&
+	       player_info[local_player_index].isBot;
+}
+
 bool CEXISlippi::opponentRunahead()
 {
 	// Bot players might be running ahead to "donate" their delay frames to us.
@@ -1665,7 +1679,7 @@ void CEXISlippi::prepareOpponentInputs(s32 frame, bool shouldSkip)
 
 	for (int i = 0; i < remotePlayerCount; i++)
 	{
-		results[i] = slippi_netplay->GetSlippiRemotePad(i, ROLLBACK_MAX_FRAMES);
+		results[i] = slippi_netplay->GetSlippiRemotePad(i, ROLLBACK_MAX_FRAMES, frame);
 		// results[i] = slippi_netplay->GetFakePadOutput(frame);
 
 		// INFO_LOG(SLIPPI_ONLINE, "Sending checksum values: [%d] %08x", results[i]->checksumFrame,
