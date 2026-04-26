@@ -249,6 +249,7 @@ class CEXISlippi : public IEXIDevice
 	void setMatchSelections(u8 *payload);
 	bool shouldSkipOnlineFrame(s32 frame, s32 finalizedFrame);
 	bool shouldAdvanceOnlineFrame(s32 frame);
+	bool localPlayerIsBot();
 	bool opponentRunahead();
 	void handleLogInRequest();
 	void handleLogOutRequest();

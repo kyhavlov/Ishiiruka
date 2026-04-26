@@ -13,6 +13,7 @@
 #include "VideoCommon/OnScreenDisplay.h"
 #include "VideoCommon/VideoConfig.h"
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <thread>
@@ -66,7 +67,8 @@ SlippiNetplayClient::~SlippiNetplayClient()
 
 // called from ---SLIPPI EXI--- thread
 SlippiNetplayClient::SlippiNetplayClient(std::vector<std::string> addrs, std::vector<u16> ports,
-                                         const u8 remotePlayerCount, const u16 localPort, bool isDecider, u8 playerIdx)
+                                         const u8 remotePlayerCount, const u16 localPort, bool isDecider, u8 playerIdx,
+                                         std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot)
 #ifdef _WIN32
     : m_qos_handle(nullptr)
     , m_qos_flow_id(0)
@@ -77,6 +79,7 @@ SlippiNetplayClient::SlippiNetplayClient(std::vector<std::string> addrs, std::ve
 	this->isDecider = isDecider;
 	this->m_remotePlayerCount = remotePlayerCount;
 	this->playerIdx = playerIdx;
+	this->remotePlayerIsBot = remotePlayerIsBot;
 
 	// Set up remote player data structures
 	int j = 0;
@@ -1123,8 +1126,25 @@ void SlippiNetplayClient::SendSlippiPad(std::unique_ptr<SlippiPad> pad)
 
 	if (pad)
 	{
-		// Add latest local pad report to queue
-		localPadQueue.push_front(std::move(pad));
+		bool alreadyQueued = false;
+		for (const auto& queuedPad : localPadQueue)
+		{
+			if (queuedPad->frame != pad->frame)
+				continue;
+
+			alreadyQueued = true;
+			if (std::memcmp(queuedPad->padBuf, pad->padBuf, SLIPPI_PAD_DATA_SIZE) != 0)
+			{
+				WARN_LOG(SLIPPI_ONLINE, "Dropping changed duplicate local input for frame %d", pad->frame);
+			}
+			break;
+		}
+
+		if (!alreadyQueued)
+		{
+			// Add latest local pad report to queue
+			localPadQueue.push_front(std::move(pad));
+		}
 	}
 
 	// Remove pad reports that have been received and acked
@@ -1329,7 +1349,8 @@ std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetFakePadOutput(int
 	return std::move(padOutput);
 }
 
-std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetSlippiRemotePad(int index, int maxFrameCount)
+std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetSlippiRemotePad(int index, int maxFrameCount,
+                                                                               s32 targetFrame)
 {
 	std::lock_guard<std::mutex> lk(pad_mutex); // TODO: Is this the correct lock?
 
@@ -1352,6 +1373,29 @@ std::unique_ptr<SlippiRemotePadOutput> SlippiNetplayClient::GetSlippiRemotePad(i
 	padOutput->latestFrame = 0;
 	padOutput->checksumFrame = remote_checksums[index].frame;
 	padOutput->checksum = remote_checksums[index].value;
+
+	if (targetFrame >= 0 && remotePlayerIsBot[index])
+	{
+		auto firstFrame = remotePadQueue[index].begin();
+		while (firstFrame != remotePadQueue[index].end() && (*firstFrame)->frame > targetFrame)
+			++firstFrame;
+
+		for (auto it = firstFrame; it != remotePadQueue[index].end(); ++it)
+		{
+			if ((*it)->frame > padOutput->latestFrame)
+				padOutput->latestFrame = (*it)->frame;
+
+			auto padIt = std::begin((*it)->padBuf);
+			padOutput->data.insert(padOutput->data.end(), padIt, padIt + SLIPPI_PAD_FULL_SIZE);
+
+			inputCount++;
+			if (inputCount >= maxFrameCount)
+				return std::move(padOutput);
+		}
+
+		if (inputCount > 0)
+			return std::move(padOutput);
+	}
 
 	// Copy inputs from the remote pad queue to the output. We iterate backwards because
 	// we want to get the oldest frames possible (will have been cleared to contain the last
@@ -1422,27 +1466,45 @@ int32_t SlippiNetplayClient::GetSlippiLatestRemoteFrame(int maxFrameCount)
 	return lowestFrame;
 }
 
+int32_t SlippiNetplayClient::GetLatestRemoteFrameForBotType(bool isBot)
+{
+	std::lock_guard<std::mutex> lk(pad_mutex);
+
+	int lowestFrame = 0;
+	bool isFrameSet = false;
+	for (int i = 0; i < m_remotePlayerCount; i++)
+	{
+		if (remotePlayerIsBot[i] != isBot)
+			continue;
+
+		const int f = remotePadQueue[i].empty() ? 0 : remotePadQueue[i].front()->frame;
+		if (f < lowestFrame || !isFrameSet)
+		{
+			lowestFrame = f;
+			isFrameSet = true;
+		}
+	}
+
+	return isFrameSet ? lowestFrame : -1;
+}
+
 // return the smallest time offset among all remote players
 s32 SlippiNetplayClient::CalcTimeOffsetUs()
 {
-	bool empty = true;
+	std::vector<int> offsets;
+	bool hasHumanOffset = false;
 	for (int i = 0; i < m_remotePlayerCount; i++)
 	{
-		if (!frameOffsetData[i].buf.empty())
+		if (!frameOffsetData[i].buf.empty() && !remotePlayerIsBot[i])
 		{
-			empty = false;
+			hasHumanOffset = true;
 			break;
 		}
 	}
-	if (empty)
-	{
-		return 0;
-	}
 
-	std::vector<int> offsets;
 	for (int i = 0; i < m_remotePlayerCount; i++)
 	{
-		if (frameOffsetData[i].buf.empty())
+		if (frameOffsetData[i].buf.empty() || (hasHumanOffset && remotePlayerIsBot[i]))
 			continue;
 
 		std::vector<s32> buf;
@@ -1469,6 +1531,11 @@ s32 SlippiNetplayClient::CalcTimeOffsetUs()
 
 		s32 result = sum / count;
 		offsets.push_back(result);
+	}
+
+	if (offsets.empty())
+	{
+		return 0;
 	}
 
 	s32 minOffset = offsets.front();

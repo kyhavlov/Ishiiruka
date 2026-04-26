@@ -1413,9 +1413,19 @@ bool CEXISlippi::shouldSkipOnlineFrame(s32 frame, s32 finalizedFrame)
 	// we have enough inputs to finalize to not overflow the available states, so if our latest frame
 	// is 101, we can't let frame 109 be created. 101 - 100 >= 109 - 100 - 7 : 1 >= 2 (false).
 	// It has to work this way because we only have room to move our states forward by one for frame 108
+	const bool isLocalPlayerBot = localPlayerIsBot();
+	constexpr s32 BOT_HUMAN_INPUT_PREDICTION_FRAMES = 2;
 	s32 latestRemoteFrame = slippi_netplay->GetSlippiLatestRemoteFrame(ROLLBACK_MAX_FRAMES);
+	s32 latestHumanRemoteFrame = -1;
+	bool isPastBotHumanPredictionLimit = false;
+	if (isLocalPlayerBot)
+	{
+		latestHumanRemoteFrame = slippi_netplay->GetLatestRemoteFrameForBotType(false);
+		isPastBotHumanPredictionLimit =
+		    latestHumanRemoteFrame >= 0 && latestHumanRemoteFrame < frame - BOT_HUMAN_INPUT_PREDICTION_FRAMES;
+	}
 	auto hasEnoughNewInputs = latestRemoteFrame - finalizedFrame >= (frame - finalizedFrame - ROLLBACK_MAX_FRAMES);
-	if (!hasEnoughNewInputs)
+	if (!hasEnoughNewInputs || isPastBotHumanPredictionLimit)
 	{
 		stallFrameCount++;
 		if (stallFrameCount > 60 * 7)
@@ -1424,9 +1434,12 @@ bool CEXISlippi::shouldSkipOnlineFrame(s32 frame, s32 finalizedFrame)
 			isConnectionStalled = true;
 		}
 
-		WARN_LOG(SLIPPI_ONLINE,
-		         "Halting for one frame due to rollback limit (frame: %d | latest: %d | finalized: %d)...", frame,
-		         latestRemoteFrame, finalizedFrame);
+		if (!hasEnoughNewInputs)
+		{
+			WARN_LOG(SLIPPI_ONLINE,
+			         "Halting for one frame due to rollback limit (frame: %d | latest: %d | finalized: %d)...", frame,
+			         latestRemoteFrame, finalizedFrame);
+		}
 
 		return true;
 	}
@@ -1486,9 +1499,12 @@ bool CEXISlippi::shouldSkipOnlineFrame(s32 frame, s32 finalizedFrame)
 
 bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 {
+	const bool isLocalPlayerBot = localPlayerIsBot();
+	const bool allowFrameAdvance = !isLocalPlayerBot;
+
 	// If the opponent is a bot running ahead to give us more inputs, we should
 	// just keep going at our own pace rather than trying to catch up.
-	if (opponentRunahead())
+	if (!isLocalPlayerBot && opponentRunahead())
 		return false;
 
 	// Logic below is used to test frame advance by forcing it more often
@@ -1508,16 +1524,21 @@ bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 	auto isTimeSyncFrame = (frame % SLIPPI_ONLINE_LOCKSTEP_INTERVAL) == 0; // Only time sync every 30 frames
 	if (isTimeSyncFrame)
 	{
+		s32 frameTime = 16683;
 		auto offsetUs = slippi_netplay->CalcTimeOffsetUs();
+		if (isLocalPlayerBot)
+		{
+			offsetUs -= SConfig::GetInstance().m_slippiOnlineDelay * frameTime;
+		}
 
 		// Dynamically adjust emulation speed in order to fine-tune time sync to reduce one sided rollbacks even more
 		// Modify emulation speed up to a max of 1% at 3 frames offset or more. Don't slow down the front instance as
 		// much because we want to prioritize performance for the fast PC
 		float deviation = 0;
 		float maxSlowDownAmount = 0.005f;
-		float maxSpeedUpAmount = 0.01f;
+		float maxSpeedUpAmount = isLocalPlayerBot ? 0.08f : 0.01f;
 		int slowDownFrameWindow = 3;
-		int speedUpFrameWindow = 3;
+		int speedUpFrameWindow = isLocalPlayerBot ? 4 : 3;
 		if (offsetUs > -250 && offsetUs < 8000)
 		{
 			// Do nothing, leave deviation at 0 for 100% emulation speed when ahead by 8 ms or less
@@ -1542,7 +1563,6 @@ bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 		INFO_LOG(SLIPPI_ONLINE, "[Frame %d] Offset for advance is: %d us. New speed: %.2f%%", frame, offsetUs,
 		         dynamicEmulationSpeed * 100.0f);
 
-		s32 frameTime = 16683;
 		s32 t1 = 10000;
 		s32 t2 = frameTime + t1;
 
@@ -1563,7 +1583,7 @@ bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 			    10000, OSD::Color::RED);
 		}
 
-		if (offsetUs < -t2 && !isCurrentlyAdvancing)
+		if (allowFrameAdvance && offsetUs < -t2 && !isCurrentlyAdvancing)
 		{
 			isCurrentlyAdvancing = true;
 
@@ -1575,6 +1595,13 @@ bool CEXISlippi::shouldAdvanceOnlineFrame(s32 frame)
 			WARN_LOG(SLIPPI_ONLINE, "Advancing on frame %d due to time sync. Offset: %d us. Frames: %d...", frame,
 			         offsetUs, framesToAdvance);
 		}
+	}
+
+	if (!allowFrameAdvance)
+	{
+		framesToAdvance = 0;
+		isCurrentlyAdvancing = false;
+		return false;
 	}
 
 	// Handle the skipped frames
@@ -1615,6 +1642,14 @@ void CEXISlippi::handleSendInputs(s32 frame, u8 delay, s32 checksumFrame, u32 ch
 	slippi_netplay->SendSlippiPad(std::move(pad));
 }
 
+bool CEXISlippi::localPlayerIsBot()
+{
+	auto player_info = matchmaking->GetPlayerInfo();
+	auto local_player_index = matchmaking->LocalPlayerIndex();
+	return local_player_index >= 0 && local_player_index < static_cast<int>(player_info.size()) &&
+	       player_info[local_player_index].isBot;
+}
+
 bool CEXISlippi::opponentRunahead()
 {
 	// Bot players might be running ahead to "donate" their delay frames to us.
@@ -1638,6 +1673,7 @@ void CEXISlippi::prepareOpponentInputs(s32 frame, bool shouldSkip)
 	m_read_queue.clear();
 
 	u8 frameResult = 1; // Indicates to continue frame
+	bool shouldAdvance = false;
 
 	auto state = slippi_netplay->GetSlippiConnectStatus();
 	if (shouldSkip)
@@ -1651,9 +1687,11 @@ void CEXISlippi::prepareOpponentInputs(s32 frame, bool shouldSkip)
 	{
 		frameResult = 3; // Indicates we have disconnected
 	}
-	else if (shouldAdvanceOnlineFrame(frame))
+	else
 	{
-		frameResult = 4;
+		shouldAdvance = shouldAdvanceOnlineFrame(frame);
+		if (shouldAdvance)
+			frameResult = 4;
 	}
 
 	m_read_queue.push_back(frameResult); // Write out the control message value
@@ -1665,7 +1703,7 @@ void CEXISlippi::prepareOpponentInputs(s32 frame, bool shouldSkip)
 
 	for (int i = 0; i < remotePlayerCount; i++)
 	{
-		results[i] = slippi_netplay->GetSlippiRemotePad(i, ROLLBACK_MAX_FRAMES);
+		results[i] = slippi_netplay->GetSlippiRemotePad(i, ROLLBACK_MAX_FRAMES, frame);
 		// results[i] = slippi_netplay->GetFakePadOutput(frame);
 
 		// INFO_LOG(SLIPPI_ONLINE, "Sending checksum values: [%d] %08x", results[i]->checksumFrame,
