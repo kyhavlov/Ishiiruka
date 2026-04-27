@@ -290,19 +290,11 @@ unsigned int SlippiNetplayClient::OnData(sf::Packet &packet, ENetPeer *peer)
 		// INFO_LOG(SLIPPI_ONLINE, "[Offset] Opp Frame: %d, My Frame: %d. Time offset: %lld", frame, timing.frame,
 		//         timeOffsetUs);
 
-		// Add this offset to circular buffer for use later
-		if (frameOffsetData[pIdx].buf.size() < SLIPPI_ONLINE_LOCKSTEP_INTERVAL)
-			frameOffsetData[pIdx].buf.push_back(static_cast<s32>(timeOffsetUs));
-		else
-			frameOffsetData[pIdx].buf[frameOffsetData[pIdx].idx] = static_cast<s32>(timeOffsetUs);
-
-		frameOffsetData[pIdx].idx = (frameOffsetData[pIdx].idx + 1) % SLIPPI_ONLINE_LOCKSTEP_INTERVAL;
-
 		s64 inputsToCopy;
 		{
 			std::lock_guard<std::mutex> lk(pad_mutex); // TODO: Is this the correct lock?
 
-			auto packetData = (u8 *)packet.getData();
+			auto packetData = (u8*)packet.getData();
 
 			// INFO_LOG(SLIPPI_ONLINE, "Receiving a packet of inputs from player %d(%d) [%d]...", packetPlayerPort,
 			// pIdx,
@@ -313,22 +305,35 @@ unsigned int SlippiNetplayClient::OnData(sf::Packet &packet, ENetPeer *peer)
 			// Expand int size up to 64 bits to avoid overflowing
 			inputsToCopy = frame64 - static_cast<s64>(headFrame);
 
+			if (inputsToCopy <= 0)
+			{
+				break;
+			}
+
 			// Check that the packet actually contains the data it claims to
 			if ((padDataOffset + inputsToCopy * SLIPPI_PAD_DATA_SIZE) > static_cast<s64>(packet.getDataSize()))
 			{
 				ERROR_LOG(SLIPPI_ONLINE,
 				          "Netplay packet too small to read pad buffer. Size: %d, Inputs: %d, MinSize: %d",
-				          (int)packet.getDataSize(), inputsToCopy, padDataOffset + inputsToCopy * SLIPPI_PAD_DATA_SIZE);
+				          (int)packet.getDataSize(), inputsToCopy,
+				          padDataOffset + inputsToCopy * SLIPPI_PAD_DATA_SIZE);
 				break;
 			}
 
 			// Not sure what the max is here. If we never ack frames it could get big...
-			if (inputsToCopy > 128) {
-				ERROR_LOG(SLIPPI_ONLINE,
-				          "Netplay packet contained too many frames: %d",
-				          inputsToCopy);
+			if (inputsToCopy > 128)
+			{
+				ERROR_LOG(SLIPPI_ONLINE, "Netplay packet contained too many frames: %d", inputsToCopy);
 				break;
 			}
+
+			// Add this offset to circular buffer for use later
+			if (frameOffsetData[pIdx].buf.size() < SLIPPI_ONLINE_LOCKSTEP_INTERVAL)
+				frameOffsetData[pIdx].buf.push_back(static_cast<s32>(timeOffsetUs));
+			else
+				frameOffsetData[pIdx].buf[frameOffsetData[pIdx].idx] = static_cast<s32>(timeOffsetUs);
+
+			frameOffsetData[pIdx].idx = (frameOffsetData[pIdx].idx + 1) % SLIPPI_ONLINE_LOCKSTEP_INTERVAL;
 
 			for (s64 i = inputsToCopy - 1; i >= 0; i--)
 			{
@@ -1076,7 +1081,18 @@ void SlippiNetplayClient::StartSlippiGame()
 	// Reset variables to start a new game
 	hasGameStarted = false;
 
-	localPadQueue.clear();
+	{
+		std::lock_guard<std::mutex> lk(pad_mutex);
+		localPadQueue.clear();
+		for (int i = 0; i < SLIPPI_REMOTE_PLAYER_MAX; i++)
+		{
+			remotePadQueue[i].clear();
+			frameOffsetData[i] = FrameOffsetData();
+			remote_checksums[i] = ChecksumEntry();
+			remote_sync_states[i] = SlippiSyncedGameState();
+		}
+		local_sync_state = SlippiSyncedGameState();
+	}
 
 	for (int i = 0; i < m_remotePlayerCount; i++)
 	{

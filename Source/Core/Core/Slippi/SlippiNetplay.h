@@ -126,8 +126,8 @@ class SlippiPlayerSelections
 
 struct ChecksumEntry
 {
-	s32 frame;
-	u32 value;
+	s32 frame = 0;
+	u32 value = 0;
 };
 
 class SlippiMatchInfo
