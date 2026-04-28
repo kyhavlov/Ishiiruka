@@ -274,6 +274,7 @@ class SlippiNetplayClient
 
   private:
 	u8 PlayerIdxFromPort(u8 port);
+	void ResetSlippiInputState();
 	unsigned int OnData(sf::Packet &packet, ENetPeer *peer);
 	void Send(sf::Packet &packet);
 	void Disconnect();

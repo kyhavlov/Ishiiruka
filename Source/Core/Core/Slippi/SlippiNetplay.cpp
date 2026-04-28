@@ -445,13 +445,6 @@ unsigned int SlippiNetplayClient::OnData(sf::Packet &packet, ENetPeer *peer)
 				break;
 			}
 			matchInfo.remotePlayerSelections[idx].Merge(*s);
-
-			// This might be a good place to reset some logic? Game can't start until we receive this msg
-			// so this should ensure that everything is initialized before the game starts
-			hasGameStarted = false;
-
-			// Reset remote pad queue such that next inputs that we get are not compared to inputs from last game
-			remotePadQueue[idx].clear();
 		}
 	}
 	break;
@@ -1081,6 +1074,17 @@ void SlippiNetplayClient::StartSlippiGame()
 	// Reset variables to start a new game
 	hasGameStarted = false;
 
+	is_desync_recovery = false;
+
+	// Clear game prep queue in case anything is still lingering
+	gamePrepStepQueue.clear();
+
+	// Reset match info for next game
+	matchInfo.Reset();
+}
+
+void SlippiNetplayClient::ResetSlippiInputState()
+{
 	{
 		std::lock_guard<std::mutex> lk(pad_mutex);
 		localPadQueue.clear();
@@ -1105,14 +1109,6 @@ void SlippiNetplayClient::StartSlippiGame()
 		// Reset ack timers
 		ackTimers[i].Clear();
 	}
-
-	is_desync_recovery = false;
-
-	// Clear game prep queue in case anything is still lingering
-	gamePrepStepQueue.clear();
-
-	// Reset match info for next game
-	matchInfo.Reset();
 }
 
 void SlippiNetplayClient::SendConnectionSelected()
@@ -1226,6 +1222,11 @@ void SlippiNetplayClient::SendSlippiPad(std::unique_ptr<SlippiPad> pad)
 
 void SlippiNetplayClient::SetMatchSelections(SlippiPlayerSelections &s)
 {
+	const bool isFirstLocalSelection =
+	    !matchInfo.localPlayerSelections.isCharacterSelected && !matchInfo.localPlayerSelections.isStageSelected;
+	if (isFirstLocalSelection)
+		ResetSlippiInputState();
+
 	matchInfo.localPlayerSelections.Merge(s);
 	matchInfo.localPlayerSelections.playerIdx = playerIdx;
 
