@@ -9,7 +9,7 @@
 // if releasing both builds, use `release: {combined_version}` or `release: {netplay_version} | {playback_version}`
 // for releasing a single build, use `release(netplay): {netplay_version}` or `release(playback): {playback_version}`
 #ifndef IS_PLAYBACK
-#define SLIPPI_REV_STR "3.6.2" // netplay version
+#define SLIPPI_REV_STR "3.6.3" // netplay version
 #else
 #define SLIPPI_REV_STR "3.6.0" // playback version
 #endif
@@ -25,7 +25,7 @@
 #ifdef IS_PLAYBACK
 const std::string scm_rev_str = "Faster Melee - Slippi (" SLIPPI_REV_STR ") - Playback" DEBUGFAST_STR;
 #else
-const std::string scm_rev_str = "Faster Melee - Slippi (" SLIPPI_REV_STR ") - bot doubles test v7" DEBUGFAST_STR;
+const std::string scm_rev_str = "Faster Melee - Slippi (" SLIPPI_REV_STR ") - bot doubles test v8" DEBUGFAST_STR;
 #endif
 const std::string scm_slippi_semver_str = SLIPPI_REV_STR;
 
