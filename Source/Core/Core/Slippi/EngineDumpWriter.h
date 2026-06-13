@@ -108,6 +108,16 @@ private:
 		u32 ground_accel_2_bits;
 		u32 anim_vel_x_bits;
 		u32 anim_vel_y_bits;
+		// v11 hidden-lane extension (fp offsets from refs/melee ft/types.h)
+		u32 x670_timers_bits;  // fp+0x670: u8 lstick tilt-x/tilt-y timers, x672 counter, x673
+		u32 x674_timers_bits;  // fp+0x674: u8 x674..x677
+		u32 x2344_bits;        // fp+0x2344: mv union word 1 (capturewait anim-rate window)
+		u32 x2348_bits;        // fp+0x2348: mv union word 2 (capturewait.x8 mash latch)
+		u32 x234c_bits;        // fp+0x234C: mv union word 3
+		u32 transn_x_bits;     // fp+0x68C: TransN-tracked position x
+		u32 transn_y_bits;     // fp+0x690: TransN-tracked position y
+		u32 transn_z_bits;     // fp+0x694: TransN-tracked position z
+		u32 x1a50_bits;        // fp+0x1A50: s8 grab-mash stick latches x/y, x1A52 counter, x1A53
 	};
 
 	struct ItemRecord
@@ -128,6 +138,22 @@ private:
 		u32 anim_frame_bits;
 		u32 lifetime_bits;
 		u32 damage;
+		s32 xC34_damage_dealt;
+		s32 xC48_clank_damage;
+		s32 xC4C_reflect_damage;
+		s32 xC50_shield_damage;
+		s32 xCA8_callback_damage;
+		u32 xCBC_hitlag_bits;
+		u32 xCC0_hitlag_min_bits;
+		u16 xDA8_short;
+		u32 xDC8_word;
+		u8 xDCE_flags;
+		u32 xDD4_laser_scale_bits;
+		u32 xDD8_laser_angle_bits;
+		u32 xDDC_laser_speed_bits;
+		u32 xDE0_laser_pos_x_bits;
+		u32 xDE4_laser_pos_y_bits;
+		u32 xDE8_laser_pos_z_bits;
 	};
 
 	struct HitboxRecord
@@ -196,5 +222,6 @@ private:
 	std::vector<ItemRecord> m_items;
 	std::vector<HitboxRecord> m_hitboxes;
 	std::vector<HitlistRecord> m_hitlists;
+	std::vector<HitlistRecord> m_item_hitlists;
 	std::vector<HurtboxRecord> m_hurtboxes;
 };
