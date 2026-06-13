@@ -410,30 +410,6 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		f.transn_y_bits = ReadU32(fp_ptr + FIGHTER_TRANSN_POS_OFF + 0x04);
 		f.transn_z_bits = ReadU32(fp_ptr + FIGHTER_TRANSN_POS_OFF + 0x08);
 		f.x1a50_bits = ReadU32(fp_ptr + 0x1A50);
-		if (frame_index >= 3876 && frame_index <= 3879 &&
-		    port == 2)
-		{
-			std::ofstream dbg(m_path + ".item11_ecb_source_dbg.txt", std::ios::app);
-			dbg << "frame=" << frame_index << " port=" << port << " fp=0x" << std::hex << fp_ptr
-			    << std::dec << " action=" << f.action_state << " af_bits=0x" << std::hex
-			    << f.action_frame_bits << " pos_x_bits=0x" << f.pos_x_bits << std::dec;
-			dbg << " lock=" << static_cast<u32>(ReadU8(fp_ptr + FIGHTER_ECB_LOCK_TIMER_OFF));
-			dbg << " x130=0x" << std::hex << ReadU32(fp_ptr + FIGHTER_COLL_X130_FLAGS_OFF);
-			dbg << " src_kind=0x" << ReadU32(fp_ptr + FIGHTER_ECB_SOURCE_OFF);
-			dbg << " src_x128_bits=0x" << ReadU32(fp_ptr + FIGHTER_ECB_SOURCE_X128_OFF);
-			dbg << " src_x12c_bits=0x" << ReadU32(fp_ptr + FIGHTER_ECB_SOURCE_X12C_OFF);
-			dbg << " desired_top_y_bits=0x" << ReadU32(fp_ptr + FIGHTER_DESIRED_ECB_TOP_OFF + 0x04);
-			dbg << " desired_bottom_y_bits=0x"
-			    << ReadU32(fp_ptr + FIGHTER_DESIRED_ECB_TOP_OFF + 0x0C);
-			dbg << " desired_right_x_bits=0x"
-			    << ReadU32(fp_ptr + FIGHTER_DESIRED_ECB_TOP_OFF + 0x10);
-			dbg << " desired_left_x_bits=0x" << ReadU32(fp_ptr + FIGHTER_DESIRED_ECB_TOP_OFF + 0x18);
-			dbg << " prev_top_y_bits=0x" << ReadU32(fp_ptr + FIGHTER_PREV_ECB_TOP_OFF + 0x04);
-			dbg << " prev_bottom_y_bits=0x" << ReadU32(fp_ptr + FIGHTER_PREV_ECB_TOP_OFF + 0x0C);
-			dbg << " prev_right_x_bits=0x" << ReadU32(fp_ptr + FIGHTER_PREV_ECB_TOP_OFF + 0x10);
-			dbg << " prev_left_x_bits=0x" << ReadU32(fp_ptr + FIGHTER_PREV_ECB_TOP_OFF + 0x18);
-			dbg << "\n";
-		}
 		m_fighters.push_back(f);
 	};
 
@@ -570,43 +546,6 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 			}
 		}
 
-	if (frame_index >= 4844 && frame_index <= 4850)
-	{
-		std::ofstream dbg(m_path + ".fighter_hidden_dbg.txt", std::ios::app);
-		dbg << "frame=" << std::dec << frame_index;
-		for (int port = 1; port <= 2; port++)
-		{
-			const u32 fp_ptr = (port == 1) ? fp1 : fp2;
-			dbg << " p" << port;
-			dbg << " fp=0x" << std::hex << fp_ptr;
-			dbg << " action=" << std::dec << (ReadU32(fp_ptr + FIGHTER_ACTION_OFF) & 0xFFFF);
-			dbg << " anim=" << (ReadU32(fp_ptr + FIGHTER_ANIM_OFF) & 0xFFFF);
-			dbg << " pos_x=0x" << std::hex << ReadU32(fp_ptr + FIGHTER_POS_X_OFF);
-			dbg << " self_x=0x" << ReadU32(fp_ptr + FIGHTER_SELF_VEL_X_OFF);
-			dbg << " kb_x=0x" << ReadU32(fp_ptr + FIGHTER_KB_VEL_OFF);
-			dbg << " atk_shield_kb_x=0x" << ReadU32(fp_ptr + FIGHTER_ATK_SHIELD_KB_OFF);
-			dbg << " gr=0x" << ReadU32(fp_ptr + FIGHTER_GR_VEL_OFF);
-			dbg << " anim_vel_x=0x" << ReadU32(fp_ptr + FIGHTER_ANIM_VEL_X_OFF);
-			dbg << " xA4=0x" << ReadU32(fp_ptr + FIGHTER_XA4_UNK_VEL_OFF);
-			dbg << " xA8=0x" << ReadU32(fp_ptr + FIGHTER_XA4_UNK_VEL_OFF + 0x04);
-			dbg << " xD4=0x" << ReadU32(fp_ptr + FIGHTER_XD4_UNK_VEL_OFF);
-			dbg << " xD8=0x" << ReadU32(fp_ptr + FIGHTER_XD4_UNK_VEL_OFF + 0x04);
-			dbg << " nudge=0x" << ReadU32(fp_ptr + FIGHTER_PLAYER_NUDGE_OFF);
-			dbg << " nudge_z=0x" << ReadU32(fp_ptr + FIGHTER_PLAYER_NUDGE_OFF + 0x04);
-			dbg << " x100=0x" << ReadU32(fp_ptr + FIGHTER_X100_OFF);
-			dbg << " x594=0x" << ReadU32(fp_ptr + 0x594);
-			dbg << " transn_pos_z=0x" << ReadU32(fp_ptr + FIGHTER_TRANSN_POS_OFF + 0x08);
-			dbg << " transn_off_z=0x" << ReadU32(fp_ptr + FIGHTER_TRANSN_OFFSET_OFF + 0x08);
-			dbg << " combo_count_raw=0x" << ReadU32(fp_ptr + FIGHTER_COMBO_COUNT_OFF);
-			dbg << " combo_push_timer_h=0x" << std::hex
-			    << static_cast<u32>(Memory::Read_U16(fp_ptr + FIGHTER_COMBO_PUSH_TIMER_OFF));
-			dbg << " x1948=" << std::dec << ReadU32(fp_ptr + FIGHTER_DMG_X1948_OFF);
-			dbg << " x194c=" << ReadU32(fp_ptr + FIGHTER_DMG_X194C_OFF);
-			dbg << " x2222=0x" << std::hex << static_cast<u32>(ReadU8(fp_ptr + FIGHTER_X2222_FLAGS_OFF));
-			dbg << " throw_flags=0x" << ReadU32(fp_ptr + FIGHTER_THROW_FLAGS_OFF);
-		}
-		dbg << std::dec << "\n";
-	}
 
 		for (int port = 1; port <= 2; port++)
 		{
