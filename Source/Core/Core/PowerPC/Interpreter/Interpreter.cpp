@@ -83,6 +83,7 @@ constexpr u32 MSL_FIGHTER_REFLECT_SPEED_MUL_OFF = 0x1A38;
 constexpr u32 MSL_FIGHTER_VICTIM_GOBJ_OFF = 0x1A58;
 constexpr u32 MSL_FIGHTER_X1A70_OFF = 0x1A70;
 constexpr u32 MSL_FIGHTER_X2174_OFF = 0x2174;
+constexpr u32 MSL_FIGHTER_STATE_FLAGS_2226_OFF = 0x2226;
 constexpr u32 MSL_CAPSULE_DAMAGE_OFF = 0x0C;
 constexpr u32 MSL_CAPSULE_ELEMENT_OFF = 0x30;
 constexpr u32 MSL_CAPSULE_SHIELD_DAMAGE_OFF = 0x34;
@@ -117,6 +118,16 @@ constexpr u32 MSL_FTCOLL_80076ED8 = 0x80076ED8;
 constexpr u32 MSL_LBCOLL_80007BCC = 0x80007BCC;
 constexpr u32 MSL_LBCOLL_80007ECC = 0x80007ECC;
 constexpr u32 MSL_LBCOLL_8000805C = 0x8000805C;
+constexpr u32 MSL_FTCO_800DDDE4 = 0x800DDDE4;
+constexpr u32 MSL_FTCO_800DDDE4_TRANSN2_BONE_RET = 0x800DDE8C;
+constexpr u32 MSL_FTCO_800DDDE4_SAMPLED_VEC = 0x800DDEA4;
+constexpr u32 MSL_FTCO_800DDDE4_XROTN_BONE_RET = 0x800DDFA0;
+constexpr u32 MSL_FTCO_800DDDE4_AFTER_X1A70 = 0x800DE0A4;
+constexpr u32 MSL_MPCOLL_800471F8_AFTER_LOAD_ECB = 0x80047254;
+constexpr u32 MSL_MPCOLL_800471F8_AFTER_CLAMP_ECB = 0x80047270;
+constexpr u32 MSL_MPCOLL_800471F8_BEFORE_AIR_COLL = 0x800472C0;
+constexpr u32 MSL_MPCOLL_800471F8_AFTER_AIR_COLL = 0x800472D4;
+constexpr u32 MSL_MPCOLL_800471F8_AFTER_END = 0x800472E8;
 constexpr u32 MSL_FTCO_800DE508 = 0x800DE508;
 constexpr u32 MSL_FTCO_80091A4C = 0x80091A4C;
 constexpr u32 MSL_FTCO_800923B4 = 0x800923B4;
@@ -219,6 +230,23 @@ struct ThrowAttachProbeCall
 ThrowAttachProbeCall g_throw_attach_probe_stack[32];
 u32 g_throw_attach_probe_depth = 0;
 
+struct ThrowReleaseProbeCall
+{
+	u32 lr;
+	u32 gobj;
+	u32 victim_gobj;
+	u32 arg5;
+	u32 thrower_fp;
+	u32 victim_fp;
+	u32 sample_fp;
+	u32 publish_fp;
+	u32 transn2_bone_idx;
+	u32 xrotn_bone_idx;
+};
+
+ThrowReleaseProbeCall g_throw_release_probe_stack[32];
+u32 g_throw_release_probe_depth = 0;
+
 struct InstanceProbeCall
 {
 	u32 fn_pc;
@@ -290,6 +318,12 @@ void DumpEventVecBits(std::ofstream& out, const char* name, u32 addr)
 {
 	out << ",\"" << name << "\":[" << ReadEventU32(addr + 0x0) << ","
 	    << ReadEventU32(addr + 0x4) << "," << ReadEventU32(addr + 0x8) << "]";
+}
+
+void DumpEventVec2Bits(std::ofstream& out, const char* name, u32 addr)
+{
+	out << ",\"" << name << "\":[" << ReadEventU32(addr + 0x0) << ","
+	    << ReadEventU32(addr + 0x4) << "]";
 }
 
 void DumpCollisionMtxBits(std::ofstream& out, const char* name, u32 addr)
@@ -470,6 +504,93 @@ void DumpAttachPartBrief(std::ofstream& out, const char* name, u32 parts, u32 id
 			DumpEventVecBits(out, "translate_bits", joint + 0x38);
 			DumpCollisionMtxBits(out, "mtx_bits", joint + 0x44);
 		}
+	}
+	out << "}";
+}
+
+void DumpEcbBits(std::ofstream& out, const char* name, u32 addr)
+{
+	out << ",\"" << name << "\":{\"addr\":" << addr;
+	DumpEventVec2Bits(out, "top_bits", addr + 0x00);
+	DumpEventVec2Bits(out, "bottom_bits", addr + 0x08);
+	DumpEventVec2Bits(out, "right_bits", addr + 0x10);
+	DumpEventVec2Bits(out, "left_bits", addr + 0x18);
+	out << "}";
+}
+
+void DumpThrowReleaseCollData(std::ofstream& out, const char* name, u32 cd)
+{
+	out << ",\"" << name << "\":{\"ptr\":" << cd;
+	if (cd != 0)
+	{
+		out << ",\"gobj\":" << ReadEventU32(cd + 0x00);
+		DumpEventVecBits(out, "cur_pos_bits", cd + 0x04);
+		DumpEventVecBits(out, "prev_pos_bits", cd + 0x10);
+		DumpEventVecBits(out, "last_pos_bits", cd + 0x1C);
+		DumpEventVecBits(out, "x28_vec_bits", cd + 0x28);
+		out << ",\"flags_34\":" << static_cast<u32>(ReadEventU8(cd + 0x34));
+		out << ",\"flags_35\":" << static_cast<u32>(ReadEventU8(cd + 0x35));
+		out << ",\"facing_dir\":" << static_cast<s32>(static_cast<s16>(ReadEventU16(cd + 0x36)));
+		out << ",\"floor_skip\":" << ReadEventS32(cd + 0x3C);
+		out << ",\"ledge_id_right\":" << ReadEventS32(cd + 0x40);
+		out << ",\"ledge_id_left\":" << ReadEventS32(cd + 0x44);
+		DumpEcbBits(out, "x64_ecb", cd + 0x64);
+		DumpEcbBits(out, "desired_ecb", cd + 0x84);
+		DumpEcbBits(out, "ecb", cd + 0xA4);
+		DumpEcbBits(out, "prev_ecb", cd + 0xC4);
+		DumpEcbBits(out, "xE4_ecb", cd + 0xE4);
+		out << ",\"ecb_source_kind\":" << ReadEventU32(cd + 0x104);
+		out << ",\"ecb_source_joint\":" << ReadEventU32(cd + 0x108);
+		out << ",\"x130_flags\":" << ReadEventU32(cd + 0x130);
+		out << ",\"env_flags\":" << ReadEventS32(cd + 0x134);
+	}
+	out << "}";
+}
+
+u32 FighterRootJObj(u32 fp)
+{
+	if (fp == 0)
+		return 0;
+	const u32 gobj = ReadEventU32(fp + 0x00);
+	if (gobj == 0)
+		return 0;
+	return ReadEventU32(gobj + 0x28);
+}
+
+void DumpThrowReleaseFighterBrief(std::ofstream& out, const char* name, u32 fp)
+{
+	out << ",\"" << name << "\":{\"ptr\":" << fp;
+	if (fp != 0)
+	{
+		const u8 flags_221b = ReadEventU8(fp + MSL_FIGHTER_STATE_FLAGS_221B_OFF);
+		const u8 flags_2226 = ReadEventU8(fp + MSL_FIGHTER_STATE_FLAGS_2226_OFF);
+		out << ",\"gobj\":" << ReadEventU32(fp + 0x00);
+		out << ",\"player_id\":" << static_cast<u32>(ReadEventU8(fp + 0x0C));
+		out << ",\"motion_id\":" << ReadEventU32(fp + 0x10);
+		out << ",\"anim_id\":" << ReadEventU32(fp + 0x14);
+		out << ",\"facing_bits\":" << ReadEventU32(fp + 0x2C);
+		DumpEventVecBits(out, "scale_bits", fp + 0x34);
+		DumpEventVecBits(out, "cur_pos_bits", fp + 0xB0);
+		DumpEventVecBits(out, "prev_pos_bits", fp + 0xBC);
+		out << ",\"ground_or_air\":" << ReadEventU32(fp + 0xE0);
+		out << ",\"cur_anim_frame_bits\":" << ReadEventU32(fp + 0x894);
+		out << ",\"victim_gobj\":" << ReadEventU32(fp + MSL_FIGHTER_VICTIM_GOBJ_OFF);
+		out << ",\"x221B_b7\":" << static_cast<u32>(flags_221b & 1);
+		out << ",\"state_flags_221b\":" << static_cast<u32>(flags_221b);
+		out << ",\"x2226_b2\":" << static_cast<u32>((flags_2226 >> 5) & 1);
+		out << ",\"state_flags_2226\":" << static_cast<u32>(flags_2226);
+		DumpEventVecBits(out, "x1A70_bits", fp + MSL_FIGHTER_X1A70_OFF);
+		DumpEventVecBits(out, "x2174_bits", fp + MSL_FIGHTER_X2174_OFF);
+		DumpEventVecBits(out, "dmg_collpos_bits", fp + 0x1854);
+		const u32 parts = ReadEventU32(fp + MSL_FIGHTER_PARTS_OFF);
+		out << ",\"parts_brief\":{\"parts_ptr\":" << parts;
+		DumpAttachPartBrief(out, "p2_xrotn_enum", parts, 2);
+		DumpAttachPartBrief(out, "p52_transn2_enum", parts, 52);
+		DumpAttachPartBrief(out, "p71_capture_anchor", parts, 71);
+		DumpAttachPartBrief(out, "p88_marth_transn2_candidate", parts, 88);
+		out << "}";
+		DumpThrowReleaseCollData(out, "coll_data", fp + 0x6F0);
+		DumpCollisionJObj(out, "root_jobj", FighterRootJObj(fp));
 	}
 	out << "}";
 }
@@ -1749,6 +1870,124 @@ void MaybeCaptureThrowAttachProbe(u32 pc)
 	out << "}\n";
 }
 
+void DumpThrowReleaseEvent(std::ofstream& out, const char* phase, const ThrowReleaseProbeCall& call)
+{
+	out << "{\"pc\":" << PC << ",\"phase\":\"" << phase << "\",\"fn\":\"ftCo_800DDDE4\""
+	    << ",\"frame\":" << static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR))
+	    << ",\"lr\":" << call.lr << ",\"sp\":" << PowerPC::ppcState.gpr[1]
+	    << ",\"gobj\":" << call.gobj << ",\"victim_gobj\":" << call.victim_gobj
+	    << ",\"arg5\":" << call.arg5 << ",\"r3\":" << PowerPC::ppcState.gpr[3]
+	    << ",\"r4\":" << PowerPC::ppcState.gpr[4] << ",\"r5\":" << PowerPC::ppcState.gpr[5]
+	    << ",\"r27\":" << PowerPC::ppcState.gpr[27] << ",\"r28\":" << PowerPC::ppcState.gpr[28]
+	    << ",\"r29\":" << PowerPC::ppcState.gpr[29] << ",\"r30\":" << PowerPC::ppcState.gpr[30]
+	    << ",\"r31\":" << PowerPC::ppcState.gpr[31]
+	    << ",\"sample_fp\":" << call.sample_fp << ",\"publish_fp\":" << call.publish_fp
+	    << ",\"transn2_bone_idx\":" << call.transn2_bone_idx
+	    << ",\"xrotn_bone_idx\":" << call.xrotn_bone_idx;
+	DumpEventVecBits(out, "stack_sample_vec_bits", PowerPC::ppcState.gpr[1] + 0x4C);
+	DumpEventVecBits(out, "stack_last_pos_vec_bits", PowerPC::ppcState.gpr[1] + 0x3C);
+	DumpThrowReleaseFighterBrief(out, "thrower", call.thrower_fp);
+	DumpThrowReleaseFighterBrief(out, "victim", call.victim_fp);
+	DumpThrowReleaseFighterBrief(out, "sample_owner", call.sample_fp);
+	DumpThrowReleaseFighterBrief(out, "publish_owner", call.publish_fp);
+	out << "}\n";
+}
+
+void MaybeCaptureThrowReleaseProbe(u32 pc)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static std::ofstream out;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* path = std::getenv("MSL_THROW_RELEASE_PROBE_PATH");
+		if (path != nullptr && path[0] != '\0')
+		{
+			out.open(path, std::ios::out | std::ios::app);
+			enabled = out.good();
+		}
+	}
+	if (!enabled)
+		return;
+
+	if (g_throw_release_probe_depth > 0)
+	{
+		ThrowReleaseProbeCall& call =
+		    g_throw_release_probe_stack[g_throw_release_probe_depth - 1];
+		if (pc == MSL_FTCO_800DDDE4_TRANSN2_BONE_RET)
+		{
+			call.transn2_bone_idx = PowerPC::ppcState.gpr[3];
+			DumpThrowReleaseEvent(out, "transn2_bone_ret", call);
+		}
+		else if (pc == MSL_FTCO_800DDDE4_SAMPLED_VEC)
+		{
+			DumpThrowReleaseEvent(out, "sampled_transn2_vec", call);
+		}
+		else if (pc == MSL_FTCO_800DDDE4_XROTN_BONE_RET)
+		{
+			call.xrotn_bone_idx = PowerPC::ppcState.gpr[3];
+			DumpThrowReleaseEvent(out, "xrotn_bone_ret", call);
+		}
+		else if (pc == MSL_FTCO_800DDDE4_AFTER_X1A70)
+		{
+			DumpThrowReleaseEvent(out, "after_x1a70", call);
+		}
+		else if (pc == MSL_MPCOLL_800471F8_AFTER_LOAD_ECB)
+		{
+			DumpThrowReleaseEvent(out, "mpcoll_after_load_ecb", call);
+		}
+		else if (pc == MSL_MPCOLL_800471F8_AFTER_CLAMP_ECB)
+		{
+			DumpThrowReleaseEvent(out, "mpcoll_after_clamp_ecb", call);
+		}
+		else if (pc == MSL_MPCOLL_800471F8_BEFORE_AIR_COLL)
+		{
+			DumpThrowReleaseEvent(out, "mpcoll_before_air_coll", call);
+		}
+		else if (pc == MSL_MPCOLL_800471F8_AFTER_AIR_COLL)
+		{
+			DumpThrowReleaseEvent(out, "mpcoll_after_air_coll", call);
+		}
+		else if (pc == MSL_MPCOLL_800471F8_AFTER_END)
+		{
+			DumpThrowReleaseEvent(out, "mpcoll_after_end", call);
+		}
+		else if (pc == call.lr)
+		{
+			DumpThrowReleaseEvent(out, "return", call);
+			g_throw_release_probe_depth--;
+		}
+	}
+
+	if (pc != MSL_FTCO_800DDDE4)
+		return;
+
+	const u32 gobj = PowerPC::ppcState.gpr[3];
+	const u32 victim_gobj = PowerPC::ppcState.gpr[4];
+	const u32 thrower_fp = FighterDataFromGobj(gobj);
+	const u32 victim_fp = FighterDataFromGobj(victim_gobj);
+	const u8 flags_221b = ReadEventU8(thrower_fp + MSL_FIGHTER_STATE_FLAGS_221B_OFF);
+	const bool reverse_owners = (flags_221b & 1) != 0;
+	if (g_throw_release_probe_depth <
+	    sizeof(g_throw_release_probe_stack) / sizeof(g_throw_release_probe_stack[0]))
+	{
+		ThrowReleaseProbeCall& call =
+		    g_throw_release_probe_stack[g_throw_release_probe_depth++];
+		call.lr = LR;
+		call.gobj = gobj;
+		call.victim_gobj = victim_gobj;
+		call.arg5 = PowerPC::ppcState.gpr[5];
+		call.thrower_fp = thrower_fp;
+		call.victim_fp = victim_fp;
+		call.sample_fp = reverse_owners ? victim_fp : thrower_fp;
+		call.publish_fp = reverse_owners ? thrower_fp : victim_fp;
+		call.transn2_bone_idx = 0xFFFFFFFF;
+		call.xrotn_bone_idx = 0xFFFFFFFF;
+		DumpThrowReleaseEvent(out, "entry", call);
+	}
+}
+
 void DumpDamageSdiFighter(std::ofstream& out, const char* name, u32 fighter_fp)
 {
 	out << ",\"" << name << "\":{";
@@ -1890,6 +2129,7 @@ int Interpreter::SingleStepInner()
 	MaybeCaptureDamageFallIasaProbe(PC);
 	MaybeCaptureCollisionProbe(PC);
 	MaybeCaptureThrowAttachProbe(PC);
+	MaybeCaptureThrowReleaseProbe(PC);
 	MaybeCaptureThrowLaserEvents(PC);
 	MaybeCaptureLaserShieldReflectEvents(PC);
 	MaybeCaptureDamageSdiProbe(PC);
