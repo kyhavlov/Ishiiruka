@@ -464,9 +464,14 @@ int main(int argc, char* argv[])
 
 #ifdef IS_PLAYBACK
 	if (slippi_input_set)
+	{
 		SConfig::GetInstance().m_strSlippiInput = slippi_input_path;
+		SConfig::GetInstance().m_coutEnabled = true;
+	}
 	else
+	{
 		SConfig::GetInstance().m_strSlippiInput = "Slippi/playback.txt";
+	}
 
 	if (slippi_step)
 		SConfig::GetInstance().m_slippiPlaybackStep = true;

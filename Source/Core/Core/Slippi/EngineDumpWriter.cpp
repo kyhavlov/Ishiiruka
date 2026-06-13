@@ -1,9 +1,12 @@
 #include "Core/Slippi/EngineDumpWriter.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <unordered_map>
 
 #include "Common/FileUtil.h"
@@ -252,22 +255,58 @@ EngineDumpWriter::~EngineDumpWriter()
 void EngineDumpWriter::SetGameSettings(const Slippi::GameSettings& settings)
 {
 	m_stage_id = settings.stage;
-	m_port_count = static_cast<u8>(settings.players.size());
-	if (m_port_count == 0)
-		m_port_count = 2;
+	m_ports.clear();
+	for (const auto& entry : settings.players)
+	{
+		const u32 port = static_cast<u32>(entry.first + 1);
+		if (port >= 1 && port <= 4)
+			m_ports.push_back(static_cast<u8>(port));
+	}
+	std::sort(m_ports.begin(), m_ports.end());
+	if (m_ports.empty())
+	{
+		m_ports.push_back(1);
+		m_ports.push_back(2);
+	}
+	m_port_count = static_cast<u8>(m_ports.size());
 }
 
 void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 {
+	const bool debug = std::getenv("MSL_ENGINE_DUMP_DEBUG") != nullptr;
 	if (m_path.empty() || frame == nullptr)
+	{
+		if (debug)
+			std::cerr << "[ENGINE_DUMP_SKIP] path_or_frame frame=" << frame_index << "\n";
 		return;
+	}
 	if (frame_index < m_start_frame || frame_index > m_end_frame)
+	{
+		if (debug)
+			std::cerr << "[ENGINE_DUMP_SKIP] window frame=" << frame_index << " start=" << m_start_frame
+			          << " end=" << m_end_frame << "\n";
 		return;
+	}
 
-	u32 fp1 = FighterPtrForPort(1);
-	u32 fp2 = FighterPtrForPort(2);
-	if (!fp1 || !fp2)
+	u32 fighter_ptrs[4] = {};
+	const u32 active_port_count = static_cast<u32>(m_ports.size());
+	for (u32 i = 0; i < active_port_count; i++)
+		fighter_ptrs[i] = FighterPtrForPort(static_cast<int>(m_ports[i]));
+	bool all_fighters_live = true;
+	for (u32 i = 0; i < active_port_count; i++)
+		all_fighters_live = all_fighters_live && fighter_ptrs[i] != 0;
+	if (!all_fighters_live)
+	{
+		if (debug)
+		{
+			std::cerr << "[ENGINE_DUMP_SKIP] fighter_ptr frame=" << frame_index;
+			for (u32 i = 0; i < active_port_count; i++)
+				std::cerr << " p" << static_cast<int>(m_ports[i]) << "=0x" << std::hex
+				          << fighter_ptrs[i] << std::dec;
+			std::cerr << "\n";
+		}
 		return;
+	}
 
 	if (!m_started)
 	{
@@ -277,6 +316,9 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 
 	if (m_last_frame != INT_MIN && frame_index != m_last_frame + 1)
 	{
+		if (debug)
+			std::cerr << "[ENGINE_DUMP_SKIP] noncontiguous frame=" << frame_index
+			          << " last=" << m_last_frame << "\n";
 		return;
 	}
 
@@ -321,9 +363,9 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		return &it->second;
 	};
 
-	for (int port = 1; port <= 2; port++)
+	for (u8 port : m_ports)
 	{
-		const Slippi::PlayerFrameData* pdata = player_for_port(port);
+		const Slippi::PlayerFrameData* pdata = player_for_port(static_cast<int>(port));
 		InputRecord in = {};
 		if (pdata)
 		{
@@ -413,12 +455,12 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		m_fighters.push_back(f);
 	};
 
-	add_fighter(fp1, 1);
-	add_fighter(fp2, 2);
+	for (u32 i = 0; i < active_port_count; i++)
+		add_fighter(fighter_ptrs[i], static_cast<int>(m_ports[i]));
 
-	for (int port = 1; port <= 2; port++)
+	for (u32 port_idx = 0; port_idx < active_port_count; port_idx++)
 	{
-		u32 fp_ptr = (port == 1) ? fp1 : fp2;
+		u32 fp_ptr = fighter_ptrs[port_idx];
 		for (u32 idx = 0; idx < 15; idx++)
 		{
 			u32 base = fp_ptr + FIGHTER_HURTBOX_BASE_OFF + idx * HURTBOX_STRIDE;
@@ -457,8 +499,8 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 	// - struct HSD_JObj: flags +0x14, rotate (Vec3 view) at +0x1C, mtx at +0x44
 	if (frame_index == -14 || frame_index == -13)
 		{
-			const int port = 1;
-			const u32 fp_ptr = fp1;
+			const int port = static_cast<int>(m_ports[0]);
+			const u32 fp_ptr = fighter_ptrs[0];
 			const u32 parts_ptr = ReadU32(fp_ptr + FIGHTER_PARTS_PTR_OFF);
 			static const u32 bone_idxs[] = {3, 4};
 
@@ -547,31 +589,33 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 		}
 
 
-		for (int port = 1; port <= 2; port++)
+		for (u32 port_idx = 0; port_idx < active_port_count; port_idx++)
 		{
-			u32 fp_ptr = (port == 1) ? fp1 : fp2;
+			u32 fp_ptr = fighter_ptrs[port_idx];
 			for (u32 idx = 0; idx < 4; idx++)
-		{
-			u32 base = fp_ptr + FIGHTER_HITBOX_BASE_OFF + idx * HITBOX_STRIDE;
-			HitboxRecord hb = {};
-			hb.state = ReadU32(base + 0x00);
-			hb.group = ReadU32(base + 0x04);
-			hb.damage = ReadU32(base + 0x08);
-			hb.damage_stale_bits = ReadU32(base + 0x0C);
-			hb.offset_x_bits = ReadU32(base + 0x18);
-			hb.offset_y_bits = ReadU32(base + 0x14);
-			hb.offset_z_bits = ReadU32(base + 0x10);
-			hb.size_bits = ReadU32(base + 0x1C);
-			hb.angle = ReadU32(base + 0x20);
-			hb.kbg = ReadU32(base + 0x24);
-			hb.wsk = ReadU32(base + 0x28);
-			hb.bkb = ReadU32(base + 0x2C);
-			hb.element = ReadU32(base + 0x30);
-			hb.shield_damage = ReadU32(base + 0x34);
-			hb.sfx = ReadU32(base + 0x38);
-			hb.sfx_kind = ReadU32(base + 0x3C);
-			for (u32 i = 0; i < 8; i++)
-				hb.flags[i] = ReadU8(base + 0x40 + i);
+			{
+				u32 base = fp_ptr + FIGHTER_HITBOX_BASE_OFF + idx * HITBOX_STRIDE;
+				HitboxRecord hb = {};
+				hb.state = ReadU32(base + 0x00);
+				hb.group = ReadU32(base + 0x04);
+				hb.damage = ReadU32(base + 0x08);
+				hb.damage_stale_bits = ReadU32(base + 0x0C);
+				hb.offset_x_bits = ReadU32(base + 0x18);
+				hb.offset_y_bits = ReadU32(base + 0x14);
+				hb.offset_z_bits = ReadU32(base + 0x10);
+				hb.size_bits = ReadU32(base + 0x1C);
+				hb.angle = ReadU32(base + 0x20);
+				hb.kbg = ReadU32(base + 0x24);
+				hb.wsk = ReadU32(base + 0x28);
+				hb.bkb = ReadU32(base + 0x2C);
+				hb.element = ReadU32(base + 0x30);
+				hb.shield_damage = ReadU32(base + 0x34);
+				hb.sfx = ReadU32(base + 0x38);
+				hb.sfx_kind = ReadU32(base + 0x3C);
+				for (u32 i = 0; i < 8; i++)
+				{
+					hb.flags[i] = ReadU8(base + 0x40 + i);
+				}
 				hb.bone_ptr = ReadU32(base + 0x48);
 				hb.pos_x_bits = ReadU32(base + 0x54);
 				hb.pos_y_bits = ReadU32(base + 0x50);
@@ -728,8 +772,9 @@ void EngineDumpWriter::Finalize()
 	AppendU8(out, static_cast<u8>(port_count));
 	AppendU16(out, m_stage_id);
 	AppendU8(out, m_is_teams);
-	AppendU8(out, 0);
-	for (u32 i = 0; i < 16; i++)
+	for (u32 i = 0; i < 4; i++)
+		AppendU8(out, i < m_ports.size() ? m_ports[i] : 0);
+	for (u32 i = 0; i < 13; i++)
 		AppendU8(out, 0);
 	AppendU32(out, frames_offset);
 	AppendU32(out, inputs_offset);

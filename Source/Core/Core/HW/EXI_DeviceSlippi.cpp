@@ -1146,12 +1146,16 @@ void CEXISlippi::prepareFrameData(u8 *payload)
 	}
 
 	bool dumpActive = engineDumpWriter && engineDumpWriter->IsEnabled();
-	if (commSettings.blockOnFrame || dumpActive)
+	bool dumpCapturingFrame = dumpActive && frameIndex >= watchSettings.startFrame &&
+	                          frameIndex <= watchSettings.endFrame;
+	if (commSettings.blockOnFrame || dumpCapturingFrame)
 	{
 		g_playbackStatus->isSoftFFW = false;
 		g_playbackStatus->setHardFFW(false);
 	}
-	bool shouldFFW = (commSettings.blockOnFrame || dumpActive) ? false : g_playbackStatus->shouldFFWFrame(frameIndex);
+	bool shouldFFW = (commSettings.blockOnFrame || dumpCapturingFrame) ?
+	                     false :
+	                     g_playbackStatus->shouldFFWFrame(frameIndex);
 	u8 requestResultCode = shouldFFW ? FRAME_RESP_FASTFORWARD : FRAME_RESP_CONTINUE;
 	if (!isFrameReady)
 	{

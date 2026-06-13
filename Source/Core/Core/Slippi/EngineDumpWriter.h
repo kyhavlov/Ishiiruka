@@ -29,6 +29,7 @@ private:
 	u8 m_is_teams = 0;
 	u32 m_last_rng_seed = 0;
 	bool m_last_rng_seed_valid = false;
+	std::vector<u8> m_ports;
 
 	struct FrameRecord
 	{
@@ -108,7 +109,7 @@ private:
 		u32 ground_accel_2_bits;
 		u32 anim_vel_x_bits;
 		u32 anim_vel_y_bits;
-		// v11 hidden-lane extension (fp offsets from refs/melee ft/types.h)
+		// v12 hidden-lane extension (fp offsets from refs/melee ft/types.h)
 		u32 x670_timers_bits;  // fp+0x670: u8 lstick tilt-x/tilt-y timers, x672 counter, x673
 		u32 x674_timers_bits;  // fp+0x674: u8 x674..x677
 		u32 x2344_bits;        // fp+0x2344: mv union word 1 (capturewait anim-rate window)
