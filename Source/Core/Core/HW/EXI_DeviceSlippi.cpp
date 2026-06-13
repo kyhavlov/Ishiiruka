@@ -9,7 +9,10 @@
 #include "Core/Slippi/SlippiReplayComm.h"
 #include <SlippiLib/SlippiGame.h>
 
+#include <cstdlib>
+#include <iostream>
 #include <semver/include/semver200.h>
+#include <thread>
 #include <utility> // std::move
 
 #include "Common/CommonPaths.h"
@@ -30,6 +33,7 @@
 #include "Core/NetPlayClient.h"
 
 #include "Core/HW/EXI_DeviceSlippi.h"
+#include "Core/HW/CPU.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/State.h"
 
@@ -57,6 +61,86 @@ static std::unordered_map<u8, std::string> slippi_connect_codes;
 
 extern std::unique_ptr<SlippiPlaybackStatus> g_playbackStatus;
 extern std::unique_ptr<SlippiReplayComm> g_replayComm;
+
+namespace
+{
+void MaybeSetProbeInterpreterModeForFrame(s32 frame)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static bool active = false;
+	static s32 frame_start = 0;
+	static s32 frame_end = -1;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* start = std::getenv("MSL_PROBE_INTERPRETER_FRAME_START");
+		const char* end = std::getenv("MSL_PROBE_INTERPRETER_FRAME_END");
+		if (start != nullptr && start[0] != '\0' && end != nullptr && end[0] != '\0')
+		{
+			frame_start = std::atoi(start);
+			frame_end = std::atoi(end);
+			enabled = frame_start <= frame_end;
+		}
+	}
+	if (!enabled)
+		return;
+
+	const bool should_interpret = frame >= frame_start && frame <= frame_end;
+	if (should_interpret == active)
+		return;
+
+	active = should_interpret;
+	PowerPC::SetMode(active ? PowerPC::MODE_INTERPRETER : PowerPC::MODE_JIT);
+	CoreTiming::ForceExceptionCheck(0);
+	CPU::Break();
+	std::thread([] {
+		Common::SleepCurrentThread(1);
+		Core::SetState(Core::CORE_RUN);
+	}).detach();
+	std::cerr << "[MSL_PROBE_CPU_MODE] frame=" << frame << " mode="
+	          << (active ? "interpreter" : "jit") << " window=" << frame_start << ".."
+	          << frame_end << "\n";
+}
+
+void MaybeTraceProbeCommand(u8 command, const u8* payload, u32 payload_len)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static int remaining = 0;
+	static std::ofstream out;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* path = std::getenv("MSL_PROBE_COMMAND_TRACE_PATH");
+		if (path != nullptr && path[0] != '\0')
+		{
+			out.open(path, std::ios::out | std::ios::app);
+			enabled = out.good();
+		}
+		const char* limit = std::getenv("MSL_PROBE_COMMAND_TRACE_LIMIT");
+		remaining = (limit != nullptr && limit[0] != '\0') ? std::atoi(limit) : 256;
+		if (remaining < 0)
+			remaining = 0;
+	}
+	if (!enabled || remaining <= 0)
+		return;
+
+	s32 payload_frame = 0x7FFFFFFF;
+	if (payload_len >= 4)
+		payload_frame = payload[0] << 24 | payload[1] << 16 | payload[2] << 8 | payload[3];
+	out << "{\"command\":" << static_cast<int>(command)
+	    << ",\"payload_len\":" << payload_len
+	    << ",\"payload_frame\":" << payload_frame;
+	if (g_playbackStatus)
+	{
+		out << ",\"current_playback_frame\":" << g_playbackStatus->currentPlaybackFrame
+		    << ",\"latest_frame\":" << g_playbackStatus->latestFrame;
+	}
+	out << "}\n";
+	remaining--;
+}
+} // namespace
 
 #ifdef LOCAL_TESTING
 bool isLocalConnected = false;
@@ -1229,6 +1313,7 @@ void CEXISlippi::prepareFrameData(u8 *payload)
 	// TODO: maybe handle other modes too?
 	if (commSettings.mode == "normal" || commSettings.mode == "queue")
 	{
+		MaybeSetProbeInterpreterModeForFrame(frame->frame);
 		g_playbackStatus->prepareSlippiPlayback(frame->frame);
 		if (commSettings.blockOnFrame)
 		{
@@ -3380,6 +3465,7 @@ void CEXISlippi::DMAWrite(u32 _uAddr, u32 _uSize)
 		}
 
 		u32 payloadLen = payloadSizes[byte];
+		MaybeTraceProbeCommand(byte, &memPtr[bufLoc + 1], payloadLen);
 		switch (byte)
 		{
 		case CMD_RECEIVE_GAME_END:

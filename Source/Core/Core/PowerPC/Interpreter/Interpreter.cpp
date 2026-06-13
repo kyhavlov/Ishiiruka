@@ -644,11 +644,14 @@ void DumpCollisionHitCapsule(std::ofstream& out, const char* name, u32 hit)
 			out << static_cast<u32>(ReadEventU8(hit + 0x40 + i));
 		}
 		out << "]";
-		out << ",\"bone_ptr\":" << ReadEventU32(hit + 0x48);
+		const u32 bone = ReadEventU32(hit + 0x48);
+		out << ",\"bone_ptr\":" << bone;
 		DumpEventVecBits(out, "x4c_bits", hit + 0x4C);
 		DumpEventVecBits(out, "x58_bits", hit + 0x58);
 		DumpEventVecBits(out, "hurt_coll_pos_bits", hit + 0x64);
 		out << ",\"coll_distance_bits\":" << ReadEventU32(hit + 0x70);
+		DumpCollisionJObj(out, "bone_jobj", bone);
+		DumpCollisionJObj(out, "bone_parent_jobj", ReadEventU32(bone + 0x0C));
 	}
 	out << "}";
 }
@@ -1814,6 +1817,54 @@ void MaybeCaptureCollisionProbe(u32 pc)
 	out << "}\n";
 }
 
+void MaybeCaptureProbePcTrace(u32 pc)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static s32 frame_start = -2147483647;
+	static s32 frame_end = 2147483647;
+	static u32 pc_start = 0;
+	static u32 pc_end = 0xFFFFFFFF;
+	static int remaining = 0;
+	static std::ofstream out;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* path = std::getenv("MSL_PROBE_PC_TRACE_PATH");
+		if (path != nullptr && path[0] != '\0')
+		{
+			out.open(path, std::ios::out | std::ios::app);
+			enabled = out.good();
+		}
+		const char* start = std::getenv("MSL_PROBE_PC_TRACE_FRAME_START");
+		if (start != nullptr && start[0] != '\0')
+			frame_start = std::atoi(start);
+		const char* end = std::getenv("MSL_PROBE_PC_TRACE_FRAME_END");
+		if (end != nullptr && end[0] != '\0')
+			frame_end = std::atoi(end);
+		const char* limit = std::getenv("MSL_PROBE_PC_TRACE_LIMIT");
+		remaining = (limit != nullptr && limit[0] != '\0') ? std::atoi(limit) : 128;
+		if (remaining < 0)
+			remaining = 0;
+		const char* pc_start_env = std::getenv("MSL_PROBE_PC_TRACE_PC_START");
+		if (pc_start_env != nullptr && pc_start_env[0] != '\0')
+			pc_start = static_cast<u32>(std::strtoul(pc_start_env, nullptr, 0));
+		const char* pc_end_env = std::getenv("MSL_PROBE_PC_TRACE_PC_END");
+		if (pc_end_env != nullptr && pc_end_env[0] != '\0')
+			pc_end = static_cast<u32>(std::strtoul(pc_end_env, nullptr, 0));
+	}
+	if (!enabled || remaining <= 0)
+		return;
+	if (pc < pc_start || pc > pc_end)
+		return;
+
+	const s32 frame = static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR));
+	if (frame < frame_start || frame > frame_end)
+		return;
+	out << "{\"pc\":" << pc << ",\"frame\":" << frame << ",\"lr\":" << LR << "}\n";
+	remaining--;
+}
+
 void MaybeCaptureThrowAttachProbe(u32 pc)
 {
 	static bool initialized = false;
@@ -2128,6 +2179,7 @@ int Interpreter::SingleStepInner()
 	MaybeCaptureInstanceProbe(PC);
 	MaybeCaptureDamageFallIasaProbe(PC);
 	MaybeCaptureCollisionProbe(PC);
+	MaybeCaptureProbePcTrace(PC);
 	MaybeCaptureThrowAttachProbe(PC);
 	MaybeCaptureThrowReleaseProbe(PC);
 	MaybeCaptureThrowLaserEvents(PC);
