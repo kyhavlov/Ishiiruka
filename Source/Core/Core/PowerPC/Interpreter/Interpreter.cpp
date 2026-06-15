@@ -73,6 +73,17 @@ constexpr u32 MSL_ITEM_FOXLASER_SCALE_OFF = 0xDD4;
 constexpr u32 MSL_ITEM_FOXLASER_ANGLE_OFF = 0xDD8;
 constexpr u32 MSL_ITEM_FOXLASER_SPEED_OFF = 0xDDC;
 constexpr u32 MSL_ITEM_FOXLASER_POS_OFF = 0xDE0;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDD4_OFF = 0xDD4;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDD8_OFF = 0xDD8;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDDC_OFF = 0xDDC;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDE0_OFF = 0xDE0;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_PREV_POS_OFF = 0xDE4;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDF4_LINE_OFF = 0xDF4;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDF8_OFF = 0xDF8;
+constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDFC_OFF = 0xDFC;
+constexpr u32 MSL_ITEM_KIND_SHEIK_NEEDLE_THROWN = 79;
+constexpr u32 MSL_ITEM_KIND_SHEIK_NEEDLE_HELD = 80;
+constexpr u32 MSL_RAND_SEED_PTR = 0x804D5F94;
 constexpr u32 MSL_FIGHTER_STATE_FLAGS_2218_OFF = 0x2218;
 constexpr u32 MSL_FIGHTER_STATE_FLAGS_221B_OFF = 0x221B;
 constexpr u32 MSL_FIGHTER_SHIELD_UNK1_OFF = 0x19B8;
@@ -111,6 +122,14 @@ constexpr u32 MSL_FN_FTCOLL_80077464 = 0x80077464;
 constexpr u32 MSL_FN_FTCOLL_80077688 = 0x80077688;
 constexpr u32 MSL_FN_ITEM_80269DC8 = 0x80269DC8;
 constexpr u32 MSL_FN_ITEM_80269F14 = 0x80269F14;
+constexpr u32 MSL_FN_HSD_RANDI = 0x80380580;
+constexpr u32 MSL_FN_FTSK_SHOOT_NEEDLES = 0x80112D44;
+constexpr u32 MSL_FN_IT_SHEIK_NEEDLE_SPAWN = 0x802AFD8C;
+constexpr u32 MSL_FN_IT_SHEIK_NEEDLE_SETUP = 0x802AFEA8;
+constexpr u32 MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL = 0x802B05CC;
+constexpr u32 MSL_FN_IT_8026EA20 = 0x8026EA20;
+constexpr u32 MSL_FN_MPLIB_80054ED8 = 0x80054ED8;
+constexpr u32 MSL_FN_ITEM_80268E5C = 0x80268E5C;
 constexpr u32 MSL_FN_ITFOXLASER_LOGIC94_SHIELDBOUNCED = 0x8029CC54;
 constexpr u32 MSL_FN_ITFOXLASER_LOGIC94_HITSHIELD = 0x8029CCF0;
 constexpr u32 MSL_FTCOLL_8007699C = 0x8007699C;
@@ -292,6 +311,23 @@ struct FallFloorProbeCall
 
 FallFloorProbeCall g_fall_floor_probe_stack[64];
 u32 g_fall_floor_probe_depth = 0;
+
+struct SheikNeedleProbeCall
+{
+	u32 fn_pc;
+	u32 lr;
+	u32 arg3;
+	u32 arg4;
+	u32 arg5;
+	u32 arg6;
+	u32 arg7;
+	u32 arg8;
+	u32 seed_pre;
+	double fpr1;
+};
+
+SheikNeedleProbeCall g_sheik_needle_probe_stack[64];
+u32 g_sheik_needle_probe_depth = 0;
 
 u32 ReadEventU32(u32 addr)
 {
@@ -2055,6 +2091,256 @@ void MaybeCaptureThrowReleaseProbe(u32 pc)
 	}
 }
 
+u32 CurrentRandSeed()
+{
+	const u32 seed_ptr = ReadEventU32(MSL_RAND_SEED_PTR);
+	return seed_ptr != 0 ? ReadEventU32(seed_ptr) : 0;
+}
+
+bool IsSheikNeedleKind(u32 kind)
+{
+	return kind == MSL_ITEM_KIND_SHEIK_NEEDLE_THROWN ||
+	       kind == MSL_ITEM_KIND_SHEIK_NEEDLE_HELD;
+}
+
+bool IsSheikNeedleItem(u32 item_data)
+{
+	if (item_data == 0)
+		return false;
+	return IsSheikNeedleKind(ReadEventU32(item_data + MSL_ITEM_KIND_OFF) & 0xFFFF);
+}
+
+bool IsSheikNeedleCaller(u32 lr)
+{
+	return (lr >= MSL_FN_FTSK_SHOOT_NEEDLES && lr < 0x80112ED8) ||
+	       (lr >= MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL && lr < 0x802B0900) ||
+	       (lr >= 0x802B0D90 && lr < 0x802B1864);
+}
+
+const char* SheikNeedleFnName(u32 pc)
+{
+	switch (pc)
+	{
+	case MSL_FN_FTSK_SHOOT_NEEDLES:
+		return "shootNeedles";
+	case MSL_FN_IT_SHEIK_NEEDLE_SPAWN:
+		return "it_802AFD8C";
+	case MSL_FN_IT_SHEIK_NEEDLE_SETUP:
+		return "it_802AFEA8";
+	case MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL:
+		return "itSeakneedlethrown_UnkMotion0_Coll";
+	case MSL_FN_HSD_RANDI:
+		return "HSD_Randi";
+	case MSL_FN_IT_8026EA20:
+		return "it_8026EA20";
+	case MSL_FN_MPLIB_80054ED8:
+		return "mpLib_80054ED8";
+	case MSL_FN_ITEM_80268E5C:
+		return "Item_80268E5C";
+	default:
+		return "unknown";
+	}
+}
+
+bool IsSheikNeedleProbeFn(u32 pc)
+{
+	return pc == MSL_FN_FTSK_SHOOT_NEEDLES || pc == MSL_FN_IT_SHEIK_NEEDLE_SPAWN ||
+	       pc == MSL_FN_IT_SHEIK_NEEDLE_SETUP || pc == MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL ||
+	       pc == MSL_FN_IT_8026EA20 || pc == MSL_FN_MPLIB_80054ED8 ||
+	       pc == MSL_FN_ITEM_80268E5C;
+}
+
+void DumpSheikNeedleItem(std::ofstream& out, const char* name, u32 item_gobj, u32 item_data)
+{
+	out << ",\"" << name << "\":{\"gobj\":" << item_gobj << ",\"ptr\":" << item_data;
+	if (item_data != 0)
+	{
+		out << ",\"kind\":" << (ReadEventU32(item_data + MSL_ITEM_KIND_OFF) & 0xFFFF);
+		out << ",\"state\":" << (ReadEventU32(item_data + MSL_ITEM_STATE_OFF) & 0xFFFF);
+		out << ",\"ground_or_air\":" << ReadEventU32(item_data + MSL_ITEM_GROUND_OR_AIR_OFF);
+		out << ",\"owner_gobj\":" << ReadEventU32(item_data + MSL_ITEM_OWNER_OFF);
+		out << ",\"lifetime_bits\":" << ReadEventU32(item_data + MSL_ITEM_LIFETIME_OFF);
+		DumpEventVecBits(out, "pos_bits", item_data + MSL_ITEM_POS_OFF);
+		DumpEventVecBits(out, "vel_bits", item_data + MSL_ITEM_VEL_OFF);
+		DumpEventVecBits(out, "prev_sweep_pos_bits",
+		                 item_data + MSL_ITEM_SHEIK_NEEDLE_PREV_POS_OFF);
+		out << ",\"xDD4_bits\":" << ReadEventU32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDD4_OFF);
+		out << ",\"xDD8_bits\":" << ReadEventU32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDD8_OFF);
+		out << ",\"xDDC_bits\":" << ReadEventU32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDDC_OFF);
+		out << ",\"xDE0_bits\":" << ReadEventU32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDE0_OFF);
+		out << ",\"xDF4_line\":" << ReadEventS32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDF4_LINE_OFF);
+		out << ",\"xDF8_bits\":" << ReadEventU32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDF8_OFF);
+		out << ",\"xDFC_bits\":" << ReadEventU32(item_data + MSL_ITEM_SHEIK_NEEDLE_XDFC_OFF);
+	}
+	out << "}";
+}
+
+void DumpSheikNeedleFighter(std::ofstream& out, const char* name, u32 fighter_data)
+{
+	out << ",\"" << name << "\":{\"ptr\":" << fighter_data;
+	if (fighter_data != 0)
+	{
+		out << ",\"gobj\":" << ReadEventU32(fighter_data + 0x00);
+		out << ",\"player_id\":" << static_cast<u32>(ReadEventU8(fighter_data + 0x0C));
+		out << ",\"action\":"
+		    << (ReadEventU32(fighter_data + MSL_FIGHTER_ACTION_STATE_OFF) & 0xFFFF);
+		out << ",\"anim_id\":" << ReadEventU32(fighter_data + 0x14);
+		out << ",\"ground_or_air\":" << ReadEventU32(fighter_data + 0xE0);
+		out << ",\"facing_bits\":" << ReadEventU32(fighter_data + 0x2C);
+		DumpEventVecBits(out, "cur_pos_bits", fighter_data + 0xB0);
+		out << ",\"cur_anim_frame_bits\":"
+		    << ReadEventU32(fighter_data + MSL_FIGHTER_ACTION_FRAME_OFF);
+		out << ",\"frame_speed_mul_bits\":" << ReadEventU32(fighter_data + 0x89C);
+		out << ",\"fv_sk_x0_count\":" << ReadEventS32(fighter_data + 0x222C);
+		out << ",\"fv_sk_x4_item_gobj\":" << ReadEventU32(fighter_data + 0x2230);
+		out << ",\"specialn_x0_timer\":" << ReadEventS32(fighter_data + 0x2340);
+		out << ",\"specialn_x4_latch\":" << ReadEventS32(fighter_data + 0x2344);
+		out << ",\"specialn_x8_charge_timer\":" << ReadEventS32(fighter_data + 0x2348);
+	}
+	out << "}";
+}
+
+void EmitSheikNeedleProbeEvent(std::ofstream& out, const char* phase,
+                               const SheikNeedleProbeCall& call, bool has_return,
+                               u32 return_value)
+{
+	out << "{\"frame\":" << static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR))
+	    << ",\"phase\":\"" << phase << "\""
+	    << ",\"event\":\"sheik_needle\""
+	    << ",\"fn\":\"" << SheikNeedleFnName(call.fn_pc) << "\""
+	    << ",\"pc\":" << call.fn_pc << ",\"lr\":" << call.lr
+	    << ",\"raw_args\":[" << call.arg3 << "," << call.arg4 << "," << call.arg5 << ","
+	    << call.arg6 << "," << call.arg7 << "," << call.arg8 << "]"
+	    << ",\"seed_pre\":" << call.seed_pre << ",\"seed_now\":" << CurrentRandSeed();
+	if (has_return)
+		out << ",\"return_value\":" << return_value;
+	if (call.fn_pc == MSL_FN_HSD_RANDI)
+		out << ",\"randi_max\":" << call.arg3;
+	if (call.fn_pc == MSL_FN_FTSK_SHOOT_NEEDLES)
+	{
+		const u32 fighter_data = FighterDataFromGobj(call.arg3);
+		const u32 held_gobj = fighter_data != 0 ? ReadEventU32(fighter_data + 0x2230) : 0;
+		const u32 held_item_data =
+		    held_gobj != 0 ? ReadEventU32(held_gobj + MSL_GOBJ_USER_DATA_OFF) : 0;
+		DumpSheikNeedleFighter(out, "fighter", fighter_data);
+		DumpSheikNeedleItem(out, "held_item", held_gobj, held_item_data);
+	}
+	else if (call.fn_pc == MSL_FN_IT_SHEIK_NEEDLE_SPAWN)
+	{
+		DumpEventVecBits(out, "spawn_arg_pos_bits", call.arg4);
+		if (has_return)
+		{
+			const u32 item_data =
+			    return_value != 0 ? ReadEventU32(return_value + MSL_GOBJ_USER_DATA_OFF) : 0;
+			DumpSheikNeedleItem(out, "return_item", return_value,
+			                    item_data);
+		}
+		DumpSheikNeedleFighter(out, "owner_fighter", FighterDataFromGobj(call.arg3));
+	}
+	else if (call.fn_pc == MSL_FN_IT_SHEIK_NEEDLE_SETUP ||
+	         call.fn_pc == MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL ||
+	         call.fn_pc == MSL_FN_ITEM_80268E5C)
+	{
+		const u32 item_data =
+		    call.arg3 != 0 ? ReadEventU32(call.arg3 + MSL_GOBJ_USER_DATA_OFF) : 0;
+		DumpSheikNeedleItem(out, "item", call.arg3,
+		                    item_data);
+	}
+	else if (call.fn_pc == MSL_FN_IT_8026EA20)
+	{
+		const u32 item_data =
+		    call.arg3 != 0 ? ReadEventU32(call.arg3 + MSL_GOBJ_USER_DATA_OFF) : 0;
+		DumpSheikNeedleItem(out, "item", call.arg3,
+		                    item_data);
+		DumpEventVecBits(out, "sweep_prev_arg_bits", call.arg4);
+		DumpEventVecBits(out, "sweep_pos_arg_bits", call.arg5);
+		if (call.arg6 != 0)
+			DumpEventVecBits(out, "hit_pos_out_bits", call.arg6);
+		out << ",\"line_out_value\":" << ReadEventS32(call.arg7);
+		out << ",\"line2_out_value\":" << ReadEventS32(call.arg8);
+	}
+	else if (call.fn_pc == MSL_FN_MPLIB_80054ED8)
+	{
+		out << ",\"line_arg\":" << static_cast<s32>(call.arg3);
+	}
+	out << "}\n";
+}
+
+void MaybeCaptureSheikNeedleProbe(u32 pc)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static s32 frame_start = -2147483647;
+	static s32 frame_end = 2147483647;
+	static std::ofstream out;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* path = std::getenv("MSL_SHEIK_NEEDLE_PROBE_PATH");
+		if (path != nullptr && path[0] != '\0')
+		{
+			out.open(path, std::ios::out | std::ios::app);
+			enabled = out.good();
+		}
+		const char* start = std::getenv("MSL_SHEIK_NEEDLE_PROBE_FRAME_START");
+		if (start != nullptr && start[0] != '\0')
+			frame_start = std::atoi(start);
+		const char* end = std::getenv("MSL_SHEIK_NEEDLE_PROBE_FRAME_END");
+		if (end != nullptr && end[0] != '\0')
+			frame_end = std::atoi(end);
+	}
+	if (!enabled)
+		return;
+
+	const s32 frame = static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR));
+	if (frame < frame_start || frame > frame_end)
+		return;
+
+	if (g_sheik_needle_probe_depth > 0 &&
+	    pc == g_sheik_needle_probe_stack[g_sheik_needle_probe_depth - 1].lr)
+	{
+		const SheikNeedleProbeCall call =
+		    g_sheik_needle_probe_stack[g_sheik_needle_probe_depth - 1];
+		g_sheik_needle_probe_depth--;
+		EmitSheikNeedleProbeEvent(out, "return", call, true, PowerPC::ppcState.gpr[3]);
+	}
+
+	if (pc == MSL_FN_HSD_RANDI && !IsSheikNeedleCaller(LR))
+		return;
+	if ((pc == MSL_FN_MPLIB_80054ED8 || pc == MSL_FN_IT_8026EA20 ||
+	     pc == MSL_FN_ITEM_80268E5C) &&
+	    !IsSheikNeedleCaller(LR))
+		return;
+	if (pc != MSL_FN_HSD_RANDI && !IsSheikNeedleProbeFn(pc))
+		return;
+
+	if (pc == MSL_FN_IT_SHEIK_NEEDLE_SETUP || pc == MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL ||
+	    pc == MSL_FN_ITEM_80268E5C || pc == MSL_FN_IT_8026EA20)
+	{
+		const u32 item_data = ReadEventU32(PowerPC::ppcState.gpr[3] + MSL_GOBJ_USER_DATA_OFF);
+		if (!IsSheikNeedleItem(item_data))
+			return;
+	}
+
+	if (g_sheik_needle_probe_depth <
+	    sizeof(g_sheik_needle_probe_stack) / sizeof(g_sheik_needle_probe_stack[0]))
+	{
+		SheikNeedleProbeCall& call =
+		    g_sheik_needle_probe_stack[g_sheik_needle_probe_depth++];
+		call.fn_pc = pc;
+		call.lr = LR;
+		call.arg3 = PowerPC::ppcState.gpr[3];
+		call.arg4 = PowerPC::ppcState.gpr[4];
+		call.arg5 = PowerPC::ppcState.gpr[5];
+		call.arg6 = PowerPC::ppcState.gpr[6];
+		call.arg7 = PowerPC::ppcState.gpr[7];
+		call.arg8 = PowerPC::ppcState.gpr[8];
+		call.seed_pre = CurrentRandSeed();
+		call.fpr1 = PowerPC::ppcState.ps[1][0];
+		EmitSheikNeedleProbeEvent(out, "entry", call, false, 0);
+	}
+}
+
 void DumpDamageSdiFighter(std::ofstream& out, const char* name, u32 fighter_fp)
 {
 	out << ",\"" << name << "\":{";
@@ -2302,6 +2588,7 @@ int Interpreter::SingleStepInner()
 	MaybeCaptureLaserShieldReflectEvents(PC);
 	MaybeCaptureDamageSdiProbe(PC);
 	MaybeCaptureFallFloorProbe(PC);
+	MaybeCaptureSheikNeedleProbe(PC);
 	u32 function = HLE::GetFunctionIndex(PC);
 	if (function != 0)
 	{
