@@ -128,6 +128,9 @@ constexpr u32 MSL_MPCOLL_800471F8_AFTER_CLAMP_ECB = 0x80047270;
 constexpr u32 MSL_MPCOLL_800471F8_BEFORE_AIR_COLL = 0x800472C0;
 constexpr u32 MSL_MPCOLL_800471F8_AFTER_AIR_COLL = 0x800472D4;
 constexpr u32 MSL_MPCOLL_800471F8_AFTER_END = 0x800472E8;
+constexpr u32 MSL_MPCOLL_80044628_FLOOR = 0x80044628;
+constexpr u32 MSL_MPCOLL_80044838_FLOOR = 0x80044838;
+constexpr u32 MSL_MPCOLL_80047E14 = 0x80047E14;
 constexpr u32 MSL_FTCO_800DE508 = 0x800DE508;
 constexpr u32 MSL_FTCO_80091A4C = 0x80091A4C;
 constexpr u32 MSL_FTCO_800923B4 = 0x800923B4;
@@ -276,6 +279,19 @@ struct DamageSdiProbeCall
 
 DamageSdiProbeCall g_damage_sdi_probe_stack[64];
 u32 g_damage_sdi_probe_depth = 0;
+
+struct FallFloorProbeCall
+{
+	u32 fn_pc;
+	u32 lr;
+	u32 coll;
+	u32 cb;
+	u32 gobj;
+	u32 arg6;
+};
+
+FallFloorProbeCall g_fall_floor_probe_stack[64];
+u32 g_fall_floor_probe_depth = 0;
 
 u32 ReadEventU32(u32 addr)
 {
@@ -2125,6 +2141,106 @@ void MaybeCaptureDamageSdiProbe(u32 pc)
 	DumpDamageSdiFighter(out, "fighter", fighter_fp);
 	out << "}\n";
 }
+
+const char* FallFloorProbeFnName(u32 pc)
+{
+	return pc == MSL_MPCOLL_80044628_FLOOR ? "mpColl_80044628_Floor"
+	       : pc == MSL_MPCOLL_80044838_FLOOR
+	           ? "mpColl_80044838_Floor"
+	           : "mpColl_80047E14";
+}
+
+void DumpFallFloorGObjBrief(std::ofstream& out, const char* name, u32 gobj)
+{
+	out << ",\"" << name << "\":{\"ptr\":" << gobj;
+	const u32 fp = FighterDataFromGobj(gobj);
+	if (fp != 0)
+	{
+		out << ",\"fighter_fp\":" << fp;
+		out << ",\"player_id\":" << static_cast<u32>(ReadEventU8(fp + 0x0C));
+		out << ",\"action\":" << (ReadEventU32(fp + MSL_FIGHTER_ACTION_STATE_OFF) & 0xFFFF);
+		out << ",\"anim_id\":" << ReadEventU32(fp + 0x14);
+		out << ",\"facing_bits\":" << ReadEventU32(fp + 0x2C);
+		DumpEventVecBits(out, "cur_pos_bits", fp + MSL_FIGHTER_POS_X_OFF);
+		DumpEventVecBits(out, "prev_pos_bits", fp + 0xBC);
+		out << ",\"ground_or_air\":" << ReadEventU32(fp + 0xE0);
+		out << ",\"action_frame_bits\":" << ReadEventU32(fp + MSL_FIGHTER_ACTION_FRAME_OFF);
+		out << ",\"lstick_y_bits\":" << ReadEventU32(fp + MSL_FIGHTER_INPUT_LSTICK_Y_OFF);
+		out << ",\"ledge_cooldown\":" << ReadEventU32(fp + 0x2064);
+		out << ",\"state_flags_2218\":" << static_cast<u32>(ReadEventU8(fp + MSL_FIGHTER_STATE_FLAGS_2218_OFF));
+		out << ",\"state_flags_2224\":" << static_cast<u32>(ReadEventU8(fp + 0x2224));
+	}
+	out << "}";
+}
+
+void DumpFallFloorEvent(std::ofstream& out, const char* phase, const FallFloorProbeCall& call)
+{
+	out << "{\"pc\":" << call.fn_pc << ",\"phase\":\"" << phase << "\",\"fn\":\""
+	    << FallFloorProbeFnName(call.fn_pc) << "\"";
+	out << ",\"frame\":" << static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR));
+	out << ",\"lr\":" << call.lr << ",\"return_r3\":" << PowerPC::ppcState.gpr[3];
+	out << ",\"coll\":" << call.coll << ",\"cb\":" << call.cb << ",\"gobj\":" << call.gobj
+	    << ",\"arg6\":" << call.arg6;
+	DumpThrowReleaseCollData(out, "coll_data", call.coll);
+	DumpFallFloorGObjBrief(out, "gobj_brief", call.gobj);
+	out << "}\n";
+}
+
+void MaybeCaptureFallFloorProbe(u32 pc)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static s32 frame_start = -2147483647;
+	static s32 frame_end = 2147483647;
+	static std::ofstream out;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* path = std::getenv("MSL_FALL_FLOOR_PROBE_PATH");
+		if (path != nullptr && path[0] != '\0')
+		{
+			out.open(path, std::ios::out | std::ios::app);
+			enabled = out.good();
+		}
+		const char* start = std::getenv("MSL_FALL_FLOOR_PROBE_FRAME_START");
+		if (start != nullptr && start[0] != '\0')
+			frame_start = std::atoi(start);
+		const char* end = std::getenv("MSL_FALL_FLOOR_PROBE_FRAME_END");
+		if (end != nullptr && end[0] != '\0')
+			frame_end = std::atoi(end);
+	}
+	if (!enabled)
+		return;
+	const s32 frame = static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR));
+	if (frame < frame_start || frame > frame_end)
+		return;
+
+	if (g_fall_floor_probe_depth > 0 &&
+	    pc == g_fall_floor_probe_stack[g_fall_floor_probe_depth - 1].lr)
+	{
+		const FallFloorProbeCall call = g_fall_floor_probe_stack[g_fall_floor_probe_depth - 1];
+		g_fall_floor_probe_depth--;
+		DumpFallFloorEvent(out, "return", call);
+	}
+
+	if (pc != MSL_MPCOLL_80044628_FLOOR && pc != MSL_MPCOLL_80044838_FLOOR &&
+	    pc != MSL_MPCOLL_80047E14)
+	{
+		return;
+	}
+	if (g_fall_floor_probe_depth <
+	    sizeof(g_fall_floor_probe_stack) / sizeof(g_fall_floor_probe_stack[0]))
+	{
+		FallFloorProbeCall& call = g_fall_floor_probe_stack[g_fall_floor_probe_depth++];
+		call.fn_pc = pc;
+		call.lr = LR;
+		call.coll = PowerPC::ppcState.gpr[3];
+		call.cb = PowerPC::ppcState.gpr[4];
+		call.gobj = (pc == MSL_MPCOLL_80044838_FLOOR) ? 0 : PowerPC::ppcState.gpr[5];
+		call.arg6 = (pc == MSL_MPCOLL_80044628_FLOOR) ? PowerPC::ppcState.gpr[6] : 0;
+		DumpFallFloorEvent(out, "entry", call);
+	}
+}
 }
 
 bool Interpreter::m_EndBlock;
@@ -2185,6 +2301,7 @@ int Interpreter::SingleStepInner()
 	MaybeCaptureThrowLaserEvents(PC);
 	MaybeCaptureLaserShieldReflectEvents(PC);
 	MaybeCaptureDamageSdiProbe(PC);
+	MaybeCaptureFallFloorProbe(PC);
 	u32 function = HLE::GetFunctionIndex(PC);
 	if (function != 0)
 	{
