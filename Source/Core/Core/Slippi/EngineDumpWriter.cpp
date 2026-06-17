@@ -346,6 +346,12 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 
 	u32 rng_state = ReadU32(RNG_STATE_ADDR);
 	u16 frame_flags = 0;
+
+	// Needle RNG forensics: emit a per-frame marker so the HSD_Randi trace stream can be split into
+	// frames and the pre-Needle-callback draw count measured. This is the frame-capture-point real LCG
+	// state. Inert unless MSL_RNG_TRACE is set.
+	if (std::getenv("MSL_RNG_TRACE") != nullptr)
+		std::fprintf(stderr, "RNGFRAME frame=%d rng_state=%08x\n", frame_index, rng_state);
 	u32 rng_seed = 0;
 	if (frame->randomSeedExists)
 	{
