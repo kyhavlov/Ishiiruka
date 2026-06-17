@@ -10,4 +10,5 @@ void HLEPanicAlert();
 void UnimplementedFunction();
 void HBReload();
 void HLEGeckoCodehandler();
+void HLE_HSD_RandiTrace();
 }

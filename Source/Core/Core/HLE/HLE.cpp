@@ -2,6 +2,8 @@
 // Licensed under GPLv2+
 // Refer to the license.txt file included.
 
+#include <cstdlib>
+
 #include "Common/CommonTypes.h"
 
 #include "Core/ConfigManager.h"
@@ -61,6 +63,7 @@ static const SPatch OSPatches[] =
 	{ "___blank",             HLE_OS::HLE_GeneralDebugPrint,   HLE_HOOK_REPLACE, HLE_TYPE_DEBUG },
 	{ "__write_console",      HLE_OS::HLE_write_console,       HLE_HOOK_REPLACE, HLE_TYPE_DEBUG }, // used by sysmenu (+more?)
 	{ "GeckoCodehandler",     HLE_Misc::HLEGeckoCodehandler,   HLE_HOOK_START,   HLE_TYPE_GENERIC },
+	{ "HSD_RandiTrace",       HLE_Misc::HLE_HSD_RandiTrace,    HLE_HOOK_START,   HLE_TYPE_GENERIC },
 };
 
 static const SPatch OSBreakPoints[] =
@@ -107,6 +110,14 @@ void PatchFunctions()
 				INFO_LOG(OSHLE, "Adding BP to %s %08x", OSBreakPoints[i].m_szPatchName, symbol->address);
 			}
 		}
+	}
+
+	// Needle post-hit RNG forensics: hook HSD_Randi (GALE01 0x80380580) by address when MSL_RNG_TRACE
+	// is set. Installed here at boot (before the function is JIT-compiled), so the JIT picks up the
+	// HLE_HOOK_START hook with no unsafe mid-execution cache clear. Inert unless MSL_RNG_TRACE is set.
+	if (std::getenv("MSL_RNG_TRACE") != nullptr)
+	{
+		Patch(0x80380580, "HSD_RandiTrace");
 	}
 
 	// CBreakPoints::AddBreakPoint(0x8000D3D0, false);

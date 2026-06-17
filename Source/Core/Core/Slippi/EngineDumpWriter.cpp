@@ -11,6 +11,7 @@
 
 #include "Common/FileUtil.h"
 #include "Core/HW/Memmap.h"
+#include "Core/PowerPC/JitInterface.h"
 
 namespace {
 constexpr u8 ENGINE_DUMP_MAGIC[8] = {'M', 'S', 'I', 'M', 'D', 'M', 'P', 0};
@@ -323,6 +324,23 @@ void EngineDumpWriter::CaptureFrame(s32 frame_index, Slippi::FrameData* frame)
 	}
 
 	m_last_frame = frame_index;
+
+	// Needle RNG forensics: the HSD_Randi (0x80380580) HLE hook is registered at boot in
+	// HLE::PatchFunctions, but the replay savestate load can leave a stale (pre-patch) JIT block for
+	// it. Force a one-time targeted recompile of just that block here (safe -- it is not the executing
+	// block) so the HLE_HOOK_START trace reliably engages. Inert unless MSL_RNG_TRACE is set.
+	static int s_rng_trace_invalidate_frames = 0;
+	if (s_rng_trace_invalidate_frames < 4 && std::getenv("MSL_RNG_TRACE") != nullptr)
+	{
+		s_rng_trace_invalidate_frames++;
+		// Invalidate the whole RNG function cluster (HSD_Rand/Randf/Randi live together around
+		// 0x80380580) so whatever JIT block covers HSD_Randi recompiles with the HLE hook. Done on the
+		// first few captured frames (not once) because the savestate-load JIT state is timing-flaky;
+		// re-invalidating until the hook reliably engages well before the contact frame is cheap for a
+		// short probe window.
+		JitInterface::InvalidateICache(0x80380400, 0x300, true);
+		std::fprintf(stderr, "RNGTRACE_INIT invalidated HSD rand cluster frame=%d\n", frame_index);
+	}
 
 	m_is_teams = ReadU8(TEAMS_FLAG_ADDR);
 
