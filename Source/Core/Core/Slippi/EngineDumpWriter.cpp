@@ -746,7 +746,10 @@ void EngineDumpWriter::Finalize()
 
 	const u32 frame_rec_size = 48;
 	const u32 input_rec_size = 32;
-	const u32 fighter_rec_size = 128;
+	// v12 fighter record is 164 bytes (v7 128 + v8/v9/v11/v12 hidden lanes). This stride drives the
+	// items/hitboxes/hurtboxes/hitlists section offsets; a stale 128 here mislocated every
+	// post-fighter section by port_count*frame_count*36 bytes (item/hitbox/hurtbox lanes unreadable).
+	const u32 fighter_rec_size = 164;
 	const u32 item_rec_size = 113;
 	const u32 hitbox_rec_size = 88;
 	const u32 hurtbox_rec_size = 68;
