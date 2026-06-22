@@ -83,9 +83,30 @@ constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDF8_OFF = 0xDF8;
 constexpr u32 MSL_ITEM_SHEIK_NEEDLE_XDFC_OFF = 0xDFC;
 constexpr u32 MSL_ITEM_KIND_SHEIK_NEEDLE_THROWN = 79;
 constexpr u32 MSL_ITEM_KIND_SHEIK_NEEDLE_HELD = 80;
+constexpr u32 MSL_ITEM_KIND_SHEIK_CHAIN = 97;
+constexpr u32 MSL_ITEM_SEAKCHAIN_X0_OFF = 0xDD4;
+constexpr u32 MSL_ITEM_SEAKCHAIN_X4_OFF = 0xDD8;
+constexpr u32 MSL_ITEM_SEAKCHAIN_PARENT_GOBJ_OFF = 0xDDC;
+constexpr u32 MSL_ITEM_SEAKCHAIN_X10_OFF = 0xDE4;
+constexpr u32 MSL_ITEM_SEAKCHAIN_X14_OFF = 0xDE8;
+constexpr u32 MSL_ITEM_SEAKCHAIN_X18_OFF = 0xDEC;
+constexpr u32 MSL_ITEM_SEAKCHAIN_HISTORY_OFF = 0xDF0;
+constexpr u32 MSL_ITEMLINK_PREV_OFF = 0x00;
+constexpr u32 MSL_ITEMLINK_NEXT_OFF = 0x04;
+constexpr u32 MSL_ITEMLINK_VEL_OFF = 0x08;
+constexpr u32 MSL_ITEMLINK_POS_OFF = 0x14;
+constexpr u32 MSL_ITEMLINK_FLAGS_2C_OFF = 0x2C;
+constexpr u32 MSL_ITEMLINK_COLL_CUR_POS_OFF = 0x34;
+constexpr u32 MSL_ITEMLINK_COLL_LAST_POS_OFF = 0x4C;
+constexpr u32 MSL_ITEMLINK_COLL_ENV_FLAGS_OFF = 0x164;
+constexpr u32 MSL_ITEMLINK_GOBJ_OFF = 0x1D0;
+constexpr u32 MSL_ITEMLINK_JOBJ_OFF = 0x1D4;
 constexpr u32 MSL_RAND_SEED_PTR = 0x804D5F94;
 constexpr u32 MSL_FIGHTER_STATE_FLAGS_2218_OFF = 0x2218;
 constexpr u32 MSL_FIGHTER_STATE_FLAGS_221B_OFF = 0x221B;
+constexpr u32 MSL_FIGHTER_MV_SK_SPECIALS_X0_OFF = 0x2340;
+constexpr u32 MSL_FIGHTER_MV_SK_SPECIALS_X1C_OFF = 0x235C;
+constexpr u32 MSL_FIGHTER_MV_SK_SPECIALS_X20_OFF = 0x2360;
 constexpr u32 MSL_FIGHTER_SHIELD_UNK1_OFF = 0x19B8;
 constexpr u32 MSL_FIGHTER_REFLECT_DIR_OFF = 0x1A2C;
 constexpr u32 MSL_FIGHTER_REFLECT_MAX_DAMAGE_OFF = 0x1A30;
@@ -127,6 +148,10 @@ constexpr u32 MSL_FN_FTSK_SHOOT_NEEDLES = 0x80112D44;
 constexpr u32 MSL_FN_IT_SHEIK_NEEDLE_SPAWN = 0x802AFD8C;
 constexpr u32 MSL_FN_IT_SHEIK_NEEDLE_SETUP = 0x802AFEA8;
 constexpr u32 MSL_FN_IT_SHEIK_NEEDLE_FLY_COLL = 0x802B05CC;
+constexpr u32 MSL_FN_ITSEAKCHAIN_EXTEND_ACCESSORY = 0x802BB44C;
+constexpr u32 MSL_FN_ITSEAKCHAIN_HELD_ACCESSORY = 0x802BB694;
+constexpr u32 MSL_FN_ITSEAKCHAIN_HELD_SOLVE = 0x802BC080;
+constexpr u32 MSL_FN_ITSEAKCHAIN_PUBLISH = 0x802BCB88;
 constexpr u32 MSL_FN_IT_8026EA20 = 0x8026EA20;
 constexpr u32 MSL_FN_MPLIB_80054ED8 = 0x80054ED8;
 constexpr u32 MSL_FN_ITEM_80268E5C = 0x80268E5C;
@@ -2150,6 +2175,159 @@ bool IsSheikNeedleProbeFn(u32 pc)
 	       pc == MSL_FN_ITEM_80268E5C;
 }
 
+bool IsSheikChainItem(u32 item_data)
+{
+	if (item_data == 0)
+		return false;
+	return (ReadEventU32(item_data + MSL_ITEM_KIND_OFF) & 0xFFFF) == MSL_ITEM_KIND_SHEIK_CHAIN;
+}
+
+const char* SheikChainFnName(u32 pc)
+{
+	switch (pc)
+	{
+	case MSL_FN_ITSEAKCHAIN_EXTEND_ACCESSORY:
+		return "fn_802BB44C";
+	case MSL_FN_ITSEAKCHAIN_HELD_ACCESSORY:
+		return "fn_802BB694";
+	case MSL_FN_ITSEAKCHAIN_HELD_SOLVE:
+		return "it_802BC080";
+	case MSL_FN_ITSEAKCHAIN_PUBLISH:
+		return "it_802BCB88";
+	default:
+		return "unknown";
+	}
+}
+
+u32 SheikChainItemDataForProbePc(u32 pc)
+{
+	if (pc == MSL_FN_ITSEAKCHAIN_PUBLISH)
+		return PowerPC::ppcState.gpr[3];
+	if (pc == MSL_FN_ITSEAKCHAIN_HELD_SOLVE)
+		return PowerPC::ppcState.gpr[5];
+	const u32 gobj = PowerPC::ppcState.gpr[3];
+	return gobj != 0 ? ReadEventU32(gobj + MSL_GOBJ_USER_DATA_OFF) : 0;
+}
+
+void DumpSheikChainLinks(std::ofstream& out, const char* name, u32 first_link, bool walk_prev)
+{
+	out << ",\"" << name << "\":[";
+	u32 link = first_link;
+	for (u32 i = 0; i < 24 && link != 0; i++)
+	{
+		if (i != 0)
+			out << ",";
+		out << "{\"i\":" << i << ",\"ptr\":" << link
+		    << ",\"prev\":" << ReadEventU32(link + MSL_ITEMLINK_PREV_OFF)
+		    << ",\"next\":" << ReadEventU32(link + MSL_ITEMLINK_NEXT_OFF)
+		    << ",\"flags2c\":" << static_cast<u32>(ReadEventU8(link + MSL_ITEMLINK_FLAGS_2C_OFF));
+		DumpEventVecBits(out, "pos_bits", link + MSL_ITEMLINK_POS_OFF);
+		DumpEventVecBits(out, "vel_bits", link + MSL_ITEMLINK_VEL_OFF);
+		DumpEventVecBits(out, "coll_cur_pos_bits", link + MSL_ITEMLINK_COLL_CUR_POS_OFF);
+		DumpEventVecBits(out, "coll_last_pos_bits", link + MSL_ITEMLINK_COLL_LAST_POS_OFF);
+		out << ",\"coll_env_flags\":" << ReadEventS32(link + MSL_ITEMLINK_COLL_ENV_FLAGS_OFF);
+		out << ",\"link_gobj\":" << ReadEventU32(link + MSL_ITEMLINK_GOBJ_OFF)
+		    << ",\"link_jobj\":" << ReadEventU32(link + MSL_ITEMLINK_JOBJ_OFF);
+		DumpCollisionJObj(out, "link_jobj_data", ReadEventU32(link + MSL_ITEMLINK_JOBJ_OFF));
+		out << "}";
+		link = ReadEventU32(link + (walk_prev ? MSL_ITEMLINK_PREV_OFF : MSL_ITEMLINK_NEXT_OFF));
+	}
+	out << "]";
+}
+
+void DumpSheikChainHistory(std::ofstream& out, u32 item_data)
+{
+	out << ",\"history_bits\":[";
+	for (u32 i = 0; i < 15; i++)
+	{
+		if (i != 0)
+			out << ",";
+		out << "[" << ReadEventU32(item_data + MSL_ITEM_SEAKCHAIN_HISTORY_OFF + i * 0x0C + 0x0)
+		    << "," << ReadEventU32(item_data + MSL_ITEM_SEAKCHAIN_HISTORY_OFF + i * 0x0C + 0x4)
+		    << "," << ReadEventU32(item_data + MSL_ITEM_SEAKCHAIN_HISTORY_OFF + i * 0x0C + 0x8)
+		    << "]";
+	}
+	out << "]";
+}
+
+void MaybeCaptureSheikChainProbe(u32 pc)
+{
+	static bool initialized = false;
+	static bool enabled = false;
+	static s32 frame_start = -2147483647;
+	static s32 frame_end = 2147483647;
+	static std::ofstream out;
+	if (!initialized)
+	{
+		initialized = true;
+		const char* path = std::getenv("MSL_SHEIK_CHAIN_PROBE_PATH");
+		if (path != nullptr && path[0] != '\0')
+		{
+			out.open(path, std::ios::out | std::ios::app);
+			enabled = out.good();
+		}
+		const char* start = std::getenv("MSL_SHEIK_CHAIN_PROBE_FRAME_START");
+		if (start != nullptr && start[0] != '\0')
+			frame_start = std::atoi(start);
+		const char* end = std::getenv("MSL_SHEIK_CHAIN_PROBE_FRAME_END");
+		if (end != nullptr && end[0] != '\0')
+			frame_end = std::atoi(end);
+	}
+	if (!enabled)
+		return;
+	if (pc != MSL_FN_ITSEAKCHAIN_EXTEND_ACCESSORY && pc != MSL_FN_ITSEAKCHAIN_HELD_ACCESSORY &&
+	    pc != MSL_FN_ITSEAKCHAIN_HELD_SOLVE && pc != MSL_FN_ITSEAKCHAIN_PUBLISH)
+		return;
+	const s32 frame = static_cast<s32>(ReadEventU32(MSL_FRAME_INDEX_PTR));
+	if (frame < frame_start || frame > frame_end)
+		return;
+	const u32 item_data = SheikChainItemDataForProbePc(pc);
+	if (!IsSheikChainItem(item_data))
+		return;
+	const u32 parent_gobj = ReadEventU32(item_data + MSL_ITEM_SEAKCHAIN_PARENT_GOBJ_OFF);
+	const u32 owner_fp = FighterDataFromGobj(parent_gobj);
+	const u32 x0 = ReadEventU32(item_data + MSL_ITEM_SEAKCHAIN_X0_OFF);
+	const u32 x4 = ReadEventU32(item_data + MSL_ITEM_SEAKCHAIN_X4_OFF);
+	out << "{\"pc\":" << pc << ",\"phase\":\"entry\",\"fn\":\"" << SheikChainFnName(pc)
+	    << "\",\"frame\":" << frame << ",\"lr\":" << LR
+	    << ",\"item_ptr\":" << item_data
+	    << ",\"item_state\":" << (ReadEventU32(item_data + MSL_ITEM_STATE_OFF) & 0xFFFF)
+	    << ",\"item_ground_or_air\":" << ReadEventU32(item_data + MSL_ITEM_GROUND_OR_AIR_OFF)
+	    << ",\"item_owner_gobj\":" << ReadEventU32(item_data + MSL_ITEM_OWNER_OFF)
+	    << ",\"parent_gobj\":" << parent_gobj << ",\"x0_tail\":" << x0
+	    << ",\"x4_head\":" << x4
+	    << ",\"x10\":" << ReadEventS32(item_data + MSL_ITEM_SEAKCHAIN_X10_OFF)
+	    << ",\"x14\":" << ReadEventS32(item_data + MSL_ITEM_SEAKCHAIN_X14_OFF)
+	    << ",\"x18\":" << ReadEventS32(item_data + MSL_ITEM_SEAKCHAIN_X18_OFF);
+	DumpEventVecBits(out, "item_pos_bits", item_data + MSL_ITEM_POS_OFF);
+	DumpEventVecBits(out, "item_vel_bits", item_data + MSL_ITEM_VEL_OFF);
+	if (owner_fp != 0)
+	{
+		out << ",\"owner_action\":" << (ReadEventU32(owner_fp + MSL_FIGHTER_ACTION_STATE_OFF) & 0xFFFF)
+		    << ",\"owner_anim_id\":" << ReadEventU32(owner_fp + 0x14)
+		    << ",\"owner_action_frame_bits\":" << ReadEventU32(owner_fp + MSL_FIGHTER_ACTION_FRAME_OFF)
+		    << ",\"owner_facing_bits\":" << ReadEventU32(owner_fp + 0x2C)
+		    << ",\"owner_lstick_x_bits\":" << ReadEventU32(owner_fp + MSL_FIGHTER_INPUT_LSTICK_X_OFF)
+		    << ",\"owner_lstick_y_bits\":" << ReadEventU32(owner_fp + MSL_FIGHTER_INPUT_LSTICK_Y_OFF)
+		    << ",\"owner_lstick1_x_bits\":" << ReadEventU32(owner_fp + MSL_FIGHTER_INPUT_LSTICK1_X_OFF)
+		    << ",\"owner_lstick1_y_bits\":" << ReadEventU32(owner_fp + MSL_FIGHTER_INPUT_LSTICK1_Y_OFF)
+		    << ",\"owner_specials_x0\":" << ReadEventS32(owner_fp + MSL_FIGHTER_MV_SK_SPECIALS_X0_OFF)
+		    << ",\"owner_specials_x1C\":" << ReadEventS32(owner_fp + MSL_FIGHTER_MV_SK_SPECIALS_X1C_OFF)
+		    << ",\"owner_specials_x20\":" << ReadEventS32(owner_fp + MSL_FIGHTER_MV_SK_SPECIALS_X20_OFF)
+		    << ",\"owner_specials_x1C_bits\":"
+		    << ReadEventU32(owner_fp + MSL_FIGHTER_MV_SK_SPECIALS_X1C_OFF)
+		    << ",\"owner_specials_x20_bits\":"
+		    << ReadEventU32(owner_fp + MSL_FIGHTER_MV_SK_SPECIALS_X20_OFF);
+		DumpEventVecBits(out, "owner_pos_bits", owner_fp + MSL_FIGHTER_POS_X_OFF);
+	}
+	if (pc == MSL_FN_ITSEAKCHAIN_HELD_SOLVE || pc == MSL_FN_ITSEAKCHAIN_PUBLISH)
+		DumpEventVecBits(out, "arg_vec_bits", PowerPC::ppcState.gpr[4]);
+	DumpSheikChainHistory(out, item_data);
+	DumpSheikChainLinks(out, "links_head_to_tail", x4, true);
+	DumpSheikChainLinks(out, "links_tail_to_head", x0, false);
+	out << "}\n";
+}
+
 void DumpSheikNeedleItem(std::ofstream& out, const char* name, u32 item_gobj, u32 item_data)
 {
 	out << ",\"" << name << "\":{\"gobj\":" << item_gobj << ",\"ptr\":" << item_data;
@@ -2588,6 +2766,7 @@ int Interpreter::SingleStepInner()
 	MaybeCaptureLaserShieldReflectEvents(PC);
 	MaybeCaptureDamageSdiProbe(PC);
 	MaybeCaptureFallFloorProbe(PC);
+	MaybeCaptureSheikChainProbe(PC);
 	MaybeCaptureSheikNeedleProbe(PC);
 	u32 function = HLE::GetFunctionIndex(PC);
 	if (function != 0)
