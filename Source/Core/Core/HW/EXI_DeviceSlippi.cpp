@@ -40,9 +40,7 @@
 #include "Core/PowerPC/PowerPC.h"
 #include "InputCommon/GCAdapter.h"
 
-// Not clean but idk a better way atm
-#include "DolphinWX/Frame.h"
-#include "DolphinWX/Main.h"
+#include "UICommon/UICommon.h"
 
 // The Rust library that houses a "shadow" EXI Device that we can call into.
 #include "SlippiRustExtensions.h"
@@ -1259,6 +1257,7 @@ void CEXISlippi::handleOnlineInputs(u8 *payload)
 	u32 finalizedFrameChecksum = Common::swap32(&payload[8]);
 	u8 delay = payload[12];
 	u8 *inputs = &payload[13];
+	m_slippiserver->setFinalizedFrame(finalizedFrame);
 	u8 inputSourcePort = payload[25];
 	bool isLeaving = payload[26] != 0;
 
@@ -2354,6 +2353,7 @@ void CEXISlippi::prepareOnlineMatchState()
 
 	m_read_queue.push_back(localPlayerReady);   // Local player ready
 	m_read_queue.push_back(remotePlayersReady); // Remote players ready
+	m_slippiserver->setLocalPlayerIndex(localPlayerIndex);
 	m_read_queue.push_back(localPlayerIndex);   // Local player index
 	m_read_queue.push_back(remotePlayerIndex);  // Remote player index
 
@@ -3068,7 +3068,7 @@ void CEXISlippi::handleLogInRequest()
 	bool logInRes = user->AttemptLogin();
 	if (!logInRes)
 	{
-		main_frame->LowerRenderWindow();
+		UICommon::LowerRenderWindow();
 		user->OpenLogInPage();
 		user->ListenForLogIn();
 	}
@@ -3085,8 +3085,8 @@ void CEXISlippi::handleUpdateAppRequest()
 #ifdef _WIN32
 	if (isUpdating)
 	{
-		main_frame->LowerRenderWindow();
-		main_frame->DoExit();
+		UICommon::LowerRenderWindow();
+		UICommon::DoExit();
 	}
 #endif
 }

@@ -61,6 +61,13 @@ class SlippiSpectateServer
 	void endGame(bool dolphin_closed = false);
 
 	void matchmakingError(const std::string& message, int state);
+	// Last online frame confirmed by all players. -1 means unknown/unavailable.
+	void setFinalizedFrame(int finalized_frame);
+
+	// The local online player index is assigned by Slippi matchmaking/netplay.
+	// It is zero-based internally; Slippstream clients also receive a one-based
+	// local_player_port matching controller port keys.
+	void setLocalPlayerIndex(int player_index);
 
 	// Don't try to copy the class. Delete those functions
 	SlippiSpectateServer(SlippiSpectateServer const &) = delete;
@@ -85,6 +92,8 @@ class SlippiSpectateServer
 	std::string m_menu_event;
 	std::string m_matchmaking_error;
 	int m_matchmaking_error_state = -1;
+	std::atomic<int> m_finalized_frame{-1};
+	std::atomic<int> m_local_player_index{-1};
 	// In order to emulate Wii behavior, the cursor position should be strictly
 	//  increasing. But internally, we need to index arrays by the cursor value.
 	//  To solve this, we keep an "offset" value that is added to all outgoing
@@ -110,4 +119,5 @@ class SlippiSpectateServer
 	void writeEvents(u16 peer_id);
 	// Pop events
 	void popEvents();
+	void addFrameMetadata(json &message);
 };

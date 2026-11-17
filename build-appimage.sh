@@ -25,6 +25,13 @@ PLAYBACK_CODES_PATH="./Data/PlaybackGeckoCodes/"
 APPDIR_BIN="./AppDir/usr/bin"
 APPDIR_HOOKS="./AppDir/apprun-hooks"
 
+EXECUTABLE="./build/Binaries/dolphin-emu"
+if [ "$1" == "headless" ]; then
+	mkdir -p ./build/appimage-headless
+	cp ./build/Binaries/dolphin-emu-nogui ./build/appimage-headless/dolphin-emu
+	EXECUTABLE="./build/appimage-headless/dolphin-emu"
+fi
+
 export NO_STRIP=on
 
 # Grab various appimage binaries from GitHub if we don't have them
@@ -53,7 +60,7 @@ cp Data/linux-env.sh ${APPDIR_HOOKS}
 mkdir -p AppDir
 ./Tools/linuxdeploy \
 	--appdir=./AppDir \
-	-e ./build/Binaries/dolphin-emu \
+	-e "${EXECUTABLE}" \
 	-d ./Data/slippi-online.desktop \
 	-i ./Data/dolphin-emu.png
 
@@ -87,10 +94,10 @@ else
 fi
 
 # remomve libs that will cause conflicts
-rm ./AppDir/usr/lib/libgmodule*
+rm -f ./AppDir/usr/lib/libgmodule*
 
 # Remove librsvg2, which causes a crash on fedora 41+ systems
-rm ./AppDir/usr/lib/librsvg-2.so.2
+rm -f ./AppDir/usr/lib/librsvg-2.so.2
 
 # Bake appimage
 UPDATE_INFORMATION="${UPDATE_INFORMATION}" OUTPUT="${OUTPUT}" ./Tools/linuxdeploy-update-plugin --appdir=./AppDir/

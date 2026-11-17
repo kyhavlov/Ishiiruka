@@ -10,6 +10,7 @@
 
 #include "Common/GL/GLInterfaceBase.h"
 #include "Core/Host.h"
+#include "UICommon/UICommon.h"
 
 void Host_NotifyMapLoaded()
 {
@@ -42,6 +43,9 @@ void Host_RequestRenderWindowSize(int, int)
 void Host_RequestFullscreen(bool)
 {
 }
+void Host_YieldToUI()
+{
+}
 void Host_SetStartupDebuggingParameters()
 {
 }
@@ -69,4 +73,10 @@ void Host_ShowVideoConfig(void*, const std::string&)
 std::unique_ptr<cInterfaceBase> HostGL_CreateGLInterface()
 {
   return nullptr;
+}
+
+namespace UICommon
+{
+void LowerRenderWindow() {}
+void DoExit() {}
 }

@@ -34,6 +34,7 @@ void SlippiSpectateServer::write(u8 *payload, u32 length)
 // CALLED FROM DOLPHIN MAIN THREAD
 void SlippiSpectateServer::startGame()
 {
+	m_finalized_frame = -1;
 	if (!SConfig::GetInstance().m_enableSpectator)
 	{
 		return;
@@ -41,12 +42,15 @@ void SlippiSpectateServer::startGame()
 
 	json start_game_message;
 	start_game_message["type"] = "start_game";
+	addFrameMetadata(start_game_message);
 	m_event_queue.Push(start_game_message.dump());
 }
 
 // CALLED FROM DOLPHIN MAIN THREAD
 void SlippiSpectateServer::endGame(bool dolphin_closed)
 {
+	m_finalized_frame = -1;
+	m_local_player_index = -1;
 	if (!SConfig::GetInstance().m_enableSpectator)
 	{
 		return;
@@ -54,6 +58,7 @@ void SlippiSpectateServer::endGame(bool dolphin_closed)
 	json end_game_message;
 	end_game_message["type"] = "end_game";
 	end_game_message["dolphin_closed"] = dolphin_closed;
+	addFrameMetadata(end_game_message);
 	m_event_queue.Push(end_game_message.dump());
 }
 
@@ -70,6 +75,26 @@ void SlippiSpectateServer::matchmakingError(const std::string& message, int stat
 	error_message["message"] = message;
 	error_message["state"] = state;
 	m_event_queue.Push(error_message.dump());
+}
+
+// CALLED FROM DOLPHIN MAIN THREAD
+void SlippiSpectateServer::setFinalizedFrame(int finalized_frame)
+{
+	m_finalized_frame = finalized_frame;
+}
+
+// CALLED FROM DOLPHIN MAIN THREAD
+void SlippiSpectateServer::setLocalPlayerIndex(int player_index)
+{
+	m_local_player_index = player_index;
+}
+
+void SlippiSpectateServer::addFrameMetadata(json &message)
+{
+	message["finalized_frame"] = m_finalized_frame.load();
+	const int local_player_index = m_local_player_index.load();
+	message["local_player_index"] = local_player_index;
+	message["local_player_port"] = local_player_index < 0 ? 0 : local_player_index + 1;
 }
 
 // CALLED FROM SERVER THREAD
@@ -121,6 +146,7 @@ void SlippiSpectateServer::popEvents()
 			if (json_message["type"] == "end_game")
 			{
 				u32 cursor = (u32)(m_event_buffer.size() + m_cursor_offset);
+				addFrameMetadata(json_message);
 				json_message["cursor"] = cursor;
 				json_message["next_cursor"] = cursor + 1;
 				m_menu_cursor = 0;
@@ -137,6 +163,7 @@ void SlippiSpectateServer::popEvents()
 				m_in_game = true;
 				m_matchmaking_error.clear();
 				m_matchmaking_error_state = -1;
+				addFrameMetadata(json_message);
 				json_message["cursor"] = cursor;
 				json_message["next_cursor"] = cursor + 1;
 				m_event_buffer.push_back(json_message.dump());
@@ -171,6 +198,7 @@ void SlippiSpectateServer::popEvents()
 			game_event["payload"] = base64::Base64::Encode(event);
 			m_menu_cursor += 1;
 			game_event["type"] = "menu_event";
+			addFrameMetadata(game_event);
 			m_menu_event = game_event.dump();
 			continue;
 		}
@@ -192,6 +220,7 @@ void SlippiSpectateServer::popEvents()
 			game_event["type"] = "game_event";
 			game_event["cursor"] = cursor;
 			game_event["next_cursor"] = cursor + 1;
+			addFrameMetadata(game_event);
 			m_event_buffer.push_back(game_event.dump());
 
 			m_event_concat = "";
@@ -211,6 +240,8 @@ SlippiSpectateServer::SlippiSpectateServer()
 	m_menu_cursor = 0;
 	m_menu_event.clear();
 	m_cursor_offset = 0;
+	m_finalized_frame = -1;
+	m_local_player_index = -1;
 
 	// Spawn thread for socket listener
 	m_stop_socket_thread = false;
@@ -290,6 +321,7 @@ void SlippiSpectateServer::handleMessage(u8 *buffer, u32 length, u16 peer_id)
 			reply["nick"] = "Slippi Online";
 			reply["version"] = scm_slippi_semver_str;
 			reply["cursor"] = sent_cursor;
+			addFrameMetadata(reply);
 
 			std::string packet_buffer = reply.dump();
 
