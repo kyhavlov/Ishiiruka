@@ -6,18 +6,31 @@ on:
 
 jobs:
   package:
+    # Tester releases attach their verified, named assets explicitly.
+    if: ${{ !startsWith(github.event.release.tag_name, 'bot-doubles-') }}
     name: Release New Slippi Dolphin
     runs-on: ubuntu-latest
     steps:
-      - name: 'Get version'
+      - name: Get version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+      - name: Find the successful build for this release commit
+        id: build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          echo "VERSION=$(echo ${{ github.ref }} | cut -d "v" -f 2)" >> $GITHUB_ENV
-      - name: Download latest artifacts
+          commit=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow pr-build.yml --commit "$commit" --status success --json databaseId --jq '.[0].databaseId // empty')
+          test -n "$run_id" || { echo "No successful build for $commit" >&2; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Download release-commit artifacts
         uses: dawidd6/action-download-artifact@v6
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: pr-build.yml
-          branch: slippi
+          run_id: ${{ steps.build.outputs.run_id }}
       - name: Organize release files"
         run: |
           rm -rf *playback*

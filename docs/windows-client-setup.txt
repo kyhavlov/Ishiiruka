@@ -1,0 +1,13 @@
+Unzip this folder and run Slippi Dolphin.exe.
+
+On Windows, a fresh install automatically uses the existing Slippi Launcher's
+login, controller mappings, and Dolphin settings. Changes to those settings
+are shared with the Launcher installation.
+
+If you already have a portable User/Config/Dolphin.ini or copied your user.json
+to User/Slippi/user.json, this build continues using that portable setup.
+If no signed-in Launcher installation is found, setup works as before:
+copy your user.json into User/Slippi and configure Dolphin normally.
+
+The --user command-line option and explicit Dolphin registry user-directory
+settings take priority over automatic discovery.
