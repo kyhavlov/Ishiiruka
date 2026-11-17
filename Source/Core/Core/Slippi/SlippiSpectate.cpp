@@ -57,6 +57,21 @@ void SlippiSpectateServer::endGame(bool dolphin_closed)
 	m_event_queue.Push(end_game_message.dump());
 }
 
+// CALLED FROM DOLPHIN MAIN THREAD
+void SlippiSpectateServer::matchmakingError(const std::string& message, int state)
+{
+	if (!SConfig::GetInstance().m_enableSpectator)
+	{
+		return;
+	}
+
+	json error_message;
+	error_message["type"] = "matchmaking_error";
+	error_message["message"] = message;
+	error_message["state"] = state;
+	m_event_queue.Push(error_message.dump());
+}
+
 // CALLED FROM SERVER THREAD
 void SlippiSpectateServer::writeEvents(u16 peer_id)
 {
@@ -120,9 +135,30 @@ void SlippiSpectateServer::popEvents()
 				m_event_buffer.clear();
 				u32 cursor = (u32)(m_event_buffer.size() + m_cursor_offset);
 				m_in_game = true;
+				m_matchmaking_error.clear();
+				m_matchmaking_error_state = -1;
 				json_message["cursor"] = cursor;
 				json_message["next_cursor"] = cursor + 1;
 				m_event_buffer.push_back(json_message.dump());
+				continue;
+			}
+			if (json_message["type"] == "matchmaking_error")
+			{
+				std::string message = json_message.value("message", "");
+				int state = json_message.value("state", -1);
+				if (message.empty())
+				{
+					m_matchmaking_error.clear();
+					m_matchmaking_error_state = -1;
+					continue;
+				}
+				if (message == m_matchmaking_error && state == m_matchmaking_error_state)
+					continue;
+
+				m_matchmaking_error = message;
+				m_matchmaking_error_state = state;
+				m_menu_cursor += 1;
+				m_menu_event = event;
 				continue;
 			}
 		}

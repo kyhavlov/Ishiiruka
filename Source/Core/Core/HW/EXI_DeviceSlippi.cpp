@@ -1972,6 +1972,8 @@ void CEXISlippi::handleLoadSavestate(u8 *payload)
 
 void CEXISlippi::startFindMatch(u8 *payload)
 {
+	m_slippiserver->matchmakingError("", -1);
+
 	SlippiMatchmaking::MatchSearchSettings search;
 	search.mode = (SlippiMatchmaking::OnlinePlayMode)payload[0];
 
@@ -2772,8 +2774,11 @@ void CEXISlippi::prepareOnlineMatchState()
 	}
 
 	// Add error message if there is one
-	auto errorStr = !forcedError.empty() ? forcedError : matchmaking->GetErrorMessage();
-	errorStr = ConvertStringForGame(errorStr, 120);
+	auto rawErrorStr = !forcedError.empty() ? forcedError : matchmaking->GetErrorMessage();
+	if (!rawErrorStr.empty())
+		m_slippiserver->matchmakingError(rawErrorStr, static_cast<int>(mmState));
+
+	auto errorStr = ConvertStringForGame(rawErrorStr, 120);
 	m_read_queue.insert(m_read_queue.end(), errorStr.begin(), errorStr.end());
 
 	// Add the match struct block to output

@@ -172,7 +172,7 @@ class SlippiNetplayClient
 	SlippiNetplayClient(bool isDecider); // Make a dummy client
 	SlippiNetplayClient(std::vector<std::string> addrs, std::vector<u16> ports, const u8 remotePlayerCount,
 	                    const u16 localPort, bool isDecider, u8 playerIdx,
-	                    std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot = {});
+	                    std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot = {}, bool localPlayerIsBot = false);
 	~SlippiNetplayClient();
 
 	// Slippi Online
@@ -319,6 +319,7 @@ class SlippiNetplayClient
 	FrameTiming lastFrameTiming[SLIPPI_REMOTE_PLAYER_MAX];
 	std::array<Common::FifoQueue<FrameTiming, false>, SLIPPI_REMOTE_PLAYER_MAX> ackTimers;
 	std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot{};
+	bool localPlayerIsBot = false;
 
 	std::atomic<SlippiConnectStatus> slippiConnectStatus{SlippiConnectStatus::NET_CONNECT_STATUS_UNSET};
 
@@ -344,6 +345,7 @@ class SlippiNetplayClient
 	std::unique_ptr<SlippiPlayerSelections> readSelectionsFromPacket(sf::Packet &packet);
 
   private:
+	friend class SlippiNetplayClientTestAccess;
 	u8 PlayerIdxFromPort(u8 port);
 	void ResetSlippiInputState();
 	unsigned int OnData(sf::Packet &packet, ENetPeer *peer);
@@ -352,6 +354,7 @@ class SlippiNetplayClient
 	// Network-thread only — call from inside ThreadFunc.
 	bool AreAllConnectionsDisconnected();
 	bool AreAllPeersDisconnectedForKey(const std::string &key);
+	bool HasLivePeerForPlayer(u8 targetPlayerIdx) const;
 	void AddRemotePad(u8 pIdx, s32 frame, u8 *padData);
 	bool ProcessPlayerDrops();
 	void SendPlayerDropReport(u8 port);

@@ -797,14 +797,18 @@ void SlippiMatchmaking::handleConnecting()
 	}
 
 	std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot{};
+	bool localPlayerIsBot = false;
 	int remotePlayerIdx = 0;
 	for (const auto& playerInfo : m_playerInfo)
 	{
+		if (playerInfo.port - 1 == m_localPlayerIndex)
+		{
+			localPlayerIsBot = playerInfo.isBot;
+			continue;
+		}
+
 		if (remotePlayerIdx >= SLIPPI_REMOTE_PLAYER_MAX)
 			break;
-
-		if (playerInfo.port - 1 == m_localPlayerIndex)
-			continue;
 
 		remotePlayerIsBot[remotePlayerIdx] = playerInfo.isBot;
 		remotePlayerIdx++;
@@ -820,7 +824,7 @@ void SlippiMatchmaking::handleConnecting()
 
 	// Is host is now used to specify who the decider is
 	auto client = std::make_unique<SlippiNetplayClient>(addrs, ports, remotePlayerCount, m_hostPort, m_isHost,
-	                                                    m_localPlayerIndex, remotePlayerIsBot);
+	                                                    m_localPlayerIndex, remotePlayerIsBot, localPlayerIsBot);
 
 	while (!m_netplayClient)
 	{

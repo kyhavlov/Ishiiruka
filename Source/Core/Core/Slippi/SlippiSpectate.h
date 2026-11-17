@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <map>
+#include <string>
 #include <thread>
 
 #include "Common/FifoQueue.h"
@@ -59,6 +60,8 @@ class SlippiSpectateServer
 	// If this was called due to dolphin closing then dolphin_closed will be true
 	void endGame(bool dolphin_closed = false);
 
+	void matchmakingError(const std::string& message, int state);
+
 	// Don't try to copy the class. Delete those functions
 	SlippiSpectateServer(SlippiSpectateServer const &) = delete;
 	void operator=(SlippiSpectateServer const &) = delete;
@@ -80,6 +83,8 @@ class SlippiSpectateServer
 	std::string m_event_concat = "";
 	std::vector<std::string> m_event_buffer;
 	std::string m_menu_event;
+	std::string m_matchmaking_error;
+	int m_matchmaking_error_state = -1;
 	// In order to emulate Wii behavior, the cursor position should be strictly
 	//  increasing. But internally, we need to index arrays by the cursor value.
 	//  To solve this, we keep an "offset" value that is added to all outgoing

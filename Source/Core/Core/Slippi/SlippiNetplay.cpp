@@ -99,7 +99,8 @@ SlippiNetplayClient::~SlippiNetplayClient()
 // called from ---SLIPPI EXI--- thread
 SlippiNetplayClient::SlippiNetplayClient(std::vector<std::string> addrs, std::vector<u16> ports,
                                          const u8 remotePlayerCount, const u16 localPort, bool isDecider, u8 playerIdx,
-                                         std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot)
+                                         std::array<bool, SLIPPI_REMOTE_PLAYER_MAX> remotePlayerIsBot,
+                                         bool localPlayerIsBot)
 #ifdef _WIN32
     : m_qos_handle(nullptr)
     , m_qos_flow_id(0)
@@ -111,6 +112,7 @@ SlippiNetplayClient::SlippiNetplayClient(std::vector<std::string> addrs, std::ve
 	this->m_remotePlayerCount = remotePlayerCount;
 	this->playerIdx = playerIdx;
 	this->remotePlayerIsBot = remotePlayerIsBot;
+	this->localPlayerIsBot = localPlayerIsBot;
 
 	// Set up remote player data structures
 	int j = 0;
@@ -1252,7 +1254,8 @@ void SlippiNetplayClient::ThreadFunc()
 				    activeConnections[key].count(netEvent.peer))
 				{
 					auto playerIdxForKey = activeConnections[key][netEvent.peer].playerIdx;
-					playerActive[playerIdxForKey].store(false, std::memory_order_release);
+					if (!HasLivePeerForPlayer(playerIdxForKey))
+						playerActive[playerIdxForKey].store(false, std::memory_order_release);
 				}
 
 				// Capture any reason the peer encoded in the disconnect data (e.g. poor performance) so the
@@ -1440,6 +1443,11 @@ void SlippiNetplayClient::SendSlippiPad(std::unique_ptr<SlippiPad> pad)
 			{
 				WARN_LOG(SLIPPI_ONLINE, "Dropping changed duplicate local input for frame %d", pad->frame);
 			}
+			else
+			{
+				queuedPad->checksumFrame = pad->checksumFrame;
+				queuedPad->checksum = pad->checksum;
+			}
 			break;
 		}
 
@@ -1492,8 +1500,9 @@ void SlippiNetplayClient::SendSlippiPad(std::unique_ptr<SlippiPad> pad)
 	*spac << static_cast<MessageId>(NP_MSG_SLIPPI_PAD);
 	*spac << frame;
 	*spac << this->playerIdx;
-	*spac << localPadQueue.front()->checksumFrame;
-	*spac << localPadQueue.front()->checksum;
+	// Preserve the deployed bot behavior: its speculative runahead state is not a peer checksum.
+	*spac << (localPlayerIsBot ? 0 : localPadQueue.front()->checksumFrame);
+	*spac << (localPlayerIsBot ? 0 : localPadQueue.front()->checksum);
 
 	// INFO_LOG(SLIPPI_ONLINE, "Sending a packet of inputs [%d]...", frame);
 	for (auto it = localPadQueue.begin(); it != localPadQueue.end(); ++it)
@@ -2020,6 +2029,19 @@ bool SlippiNetplayClient::AreAllPeersDisconnectedForKey(const std::string &key)
 }
 
 // Network-thread only (called from ThreadFunc disconnect handler).
+bool SlippiNetplayClient::HasLivePeerForPlayer(u8 targetPlayerIdx) const
+{
+	for (const auto &conn : activeConnections)
+	{
+		for (const auto &peer : conn.second)
+		{
+			if (peer.second.playerIdx == targetPlayerIdx && !peer.second.isDisconnected)
+				return true;
+		}
+	}
+	return false;
+}
+
 bool SlippiNetplayClient::AreAllConnectionsDisconnected()
 {
 	for (auto &conn : activeConnections)
