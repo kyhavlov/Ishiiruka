@@ -104,6 +104,13 @@ jobs:
           cd .\Binary\x64\
           fsutil file createnew FIX-VCRUNTIME140-ERROR.txt 0
           echo "Download and install this: https://aka.ms/vs/16/release/vc_redist.x64.exe" > .\FIX-VCRUNTIME140-ERROR.txt
+      - name: "Include netplay setup instructions"
+        if: matrix.build_type == 'Netplay'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force Binary/x64/User/Slippi
+          New-Item -ItemType File -Force Binary/x64/User/Slippi/USER_JSON_HERE
+          Copy-Item docs/windows-client-setup.txt Binary/x64/README.txt
       - name: "Add Playback codes"
         working-directory: ${{ github.workspace }}
         if: matrix.build_type == 'Playback'

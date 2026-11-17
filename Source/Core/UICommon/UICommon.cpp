@@ -103,6 +103,7 @@ void SetUserDirectory(const std::string &custom_path)
 		RegCloseKey(hkey);
 	}
 
+	const bool registry_local = local != 0;
 	local = local || File::Exists(File::GetExeDirectory() + DIR_SEP "portable.txt");
 
 	// Get Program Files path in case we need it.
@@ -130,6 +131,24 @@ void SetUserDirectory(const std::string &custom_path)
 		user_path = TStrToUTF8(my_documents) + DIR_SEP "Dolphin Emulator" DIR_SEP;
 	else // Case 5
 		user_path = File::GetExeDirectory() + DIR_SEP USERDATA_DIR DIR_SEP;
+
+#ifndef IS_PLAYBACK
+	// A fresh tester zip uses the Launcher's login, controllers and settings. Keep an
+	// existing portable setup and explicit registry/command-line overrides as they are.
+	const std::string legacy_path = user_path + (user_path.back() == DIR_SEP_CHR ? "" : DIR_SEP);
+	const bool has_existing_config = File::Exists(legacy_path + "Slippi/user.json") ||
+	                                 File::Exists(legacy_path + "Config/Dolphin.ini");
+	if (!registry_local && !configPath[0] && !has_existing_config)
+	{
+		TCHAR app_data[MAX_PATH];
+		if (SUCCEEDED(SHGetFolderPath(nullptr, CSIDL_APPDATA, nullptr, SHGFP_TYPE_CURRENT, app_data)))
+		{
+			const std::string launcher_user = TStrToUTF8(app_data) + "/Slippi Launcher/netplay/User/";
+			if (File::Exists(launcher_user + "Slippi/user.json") && File::Exists(launcher_user + "Config/Dolphin.ini"))
+				user_path = launcher_user;
+		}
+	}
+#endif
 
 	// Prettify the path: it will be displayed in some places, we don't want a mix of \ and /.
 	user_path = ReplaceAll(user_path, "\\", DIR_SEP);
